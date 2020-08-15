@@ -1,0 +1,4 @@
+models/*
+results/*
+notebook/*
+*/__pycache__
