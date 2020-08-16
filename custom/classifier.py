@@ -1044,12 +1044,10 @@ class CustomModel(RasaModel):
         losses = []
         if self.config[INTENT_CLASSIFICATION]:
             preds = self._tf_layers['intent_layer'](x, sequence_lengths, training=self._training)
-            labels = tf_batch_data[LABEL_IDS][0]
+            labels = tf_batch_data[LABEL_IDS][0][:,0]
             loss = tf.keras.losses.sparse_categorical_crossentropy(labels, preds)
             loss = tf.reduce_mean(loss)
-            acc = tf.cast(labels, tf.int64) == tf.argmax(preds, axis=-1)
-            acc = tf.reduce_mean(tf.cast(acc, tf.float32))
-            
+            acc = tf.keras.metrics.categorical_accuracy(labels, tf.argmax(preds, axis=-1))            
             losses.append(loss)
             self.intent_loss.update_state(loss)
             self.intent_acc.update_state(acc)
@@ -1089,7 +1087,6 @@ class CustomModel(RasaModel):
         out = {}
         if self.config[INTENT_CLASSIFICATION]:
             preds = self._tf_layers['intent_layer'](x, sequence_lengths, training=self._training)
-            preds = tf.argmax(preds, axis=-1)
             out['i_scores'] = preds
         
         if self.config[ENTITY_RECOGNITION]:

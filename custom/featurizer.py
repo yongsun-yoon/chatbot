@@ -55,6 +55,8 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         elif self.component_config[MODEL] == 'word2vec':
             self.model_class = Word2Vec
         
+        base_dir = os.path.join(os.path.dirname(__file__), '..')
+        self.model_path = os.path.join(base_dir, self.component_config[MODEL_PATH])
         self.model = None
 
     @classmethod
@@ -62,8 +64,6 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         return ["gensim"]
 
     def load_model(self):
-        base_dir = os.path.join(os.path.dirname(__file__), '..')
-        self.model_path = os.path.join(base_dir, self.component_config[MODEL_PATH])
         self.model = self.model_class.load(self.model_path)
 
     def get_data_from_examples(self, examples: List[Message], attribute: Text = TEXT) -> List[List[str]]:
