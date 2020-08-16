@@ -92,8 +92,8 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         for index in range(len(number_of_tokens_in_sentence)):
             sequence_length = number_of_tokens_in_sentence[index]
             sequence_encoding = sequence_encodings[index][:sequence_length]
-            # sentence_encoding = sentence_encodings[index]
-            # sequence_encoding = np.concatenate([sequence_encoding, sentence_encoding], axis=0)
+            sentence_encoding = sentence_encodings[index]
+            sequence_encoding[-1] = sentence_encoding
             final_embeddings.append(sequence_encoding)
         
         return np.array(final_embeddings)
