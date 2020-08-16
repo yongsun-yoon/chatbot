@@ -54,19 +54,17 @@ class WordEmbedFeaturizer(DenseFeaturizer):
             self.model_class = FastText
         elif self.component_config[MODEL] == 'word2vec':
             self.model_class = Word2Vec
-
-        if not self.component_config[TRAIN]:
-            self.load_model()
-
+        
+        self.model = None
 
     @classmethod
     def required_packages(cls) -> List[Text]:
         return ["gensim"]
 
-    def load_model(self) -> None:
+    def load_model(self):
         base_dir = os.path.join(os.path.dirname(__file__), '..')
-        model_path = os.path.join(base_dir, self.component_config[MODEL_PATH])
-        self.model = FastText.load(model_path)
+        self.model_path = os.path.join(base_dir, self.component_config[MODEL_PATH])
+        self.model = self.model_class.load(self.model_path)
 
     def get_data_from_examples(self, examples: List[Message], attribute: Text = TEXT) -> List[List[str]]:
         list_of_tokens = [example.get(TOKENS_NAMES[attribute]) for example in examples]
@@ -123,9 +121,7 @@ class WordEmbedFeaturizer(DenseFeaturizer):
                     min_count=self.component_config[MIN_COUNT],
                     iter=self.component_config[EPOCHS])
                     
-        base_dir = os.path.join(os.path.dirname(__file__), '..')
-        model_path = os.path.join(base_dir, self.component_config[MODEL_PATH])
-        model.save(model_path)
+        model.save(self.model_path)
     
     def train(
         self,
@@ -162,6 +158,9 @@ class WordEmbedFeaturizer(DenseFeaturizer):
                     )
 
     def process(self, message: Message, **kwargs: Any) -> None:
+        if not self.model:
+            self.load_model()
+            
         features = self._compute_features([message])[0]
         message.set(
             DENSE_FEATURE_NAMES[TEXT],
