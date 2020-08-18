@@ -13,16 +13,14 @@ pipeline:
     max_ngram: 4
   - name: custom.featurizer.FlairFeaturizer
     epochs: 100
-    model_size: 64
-    seq_len: 200
-    train: True
+    model_size: 100
+    seq_len: 100
   - name: custom.featurizer.WordEmbedFeaturizer
     # model: 'word2vec'
     # model_path: 'models/word2vec'
     model: 'fasttext'
     model_path: 'models/fasttext'
-    train: True
-    model_size: 32
+    model_size: 70
     window_size: 7
     min_count: 1
     epochs: 10

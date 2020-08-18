@@ -160,7 +160,7 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         )
     
     def persist(self, file_name: Text, model_dir: Text) -> Dict[Text, Any]:
-        gensim_model_path = os.path.join(model_dir, f'{file_name}.gensim_model')
+        gensim_model_path = os.path.join(model_dir, f'{file_name}.model')
         self.model.save(gensim_model_path)
         return {"file" : file_name}
 
@@ -182,9 +182,10 @@ class WordEmbedFeaturizer(DenseFeaturizer):
             )
             return cls(component_config=meta)
 
+        file_name = meta['file']
         model_class = FastText if meta['model'] == 'fasttext' else Word2Vec
-        model_path = os.path.join(model_dir, f"{meta['file']}.{meta['model']}")
-        model = model_class(model_path)
+        gensim_model_path = os.path.join(model_dir, f"{file_name}.model")
+        model = model_class.load(gensim_model_path)
         return cls(component_config=meta, model=model)
 
 
