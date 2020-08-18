@@ -159,3 +159,38 @@ class TransformerLayer(tf.keras.layers.Layer):
         out2 = self.layernorm2(out1 + out2)
         return out2
 
+class FlairEmbedding(tf.keras.Model):
+    def __init__(self, vocab_size, model_dim):
+        super(FlairEmbedding, self).__init__()
+        self.embedding = tf.keras.layers.Embedding(vocab_size, model_dim)
+        self.forward_lstm = tf.keras.layers.LSTM(model_dim, return_sequences=True)
+        self.forward_outputs = tf.keras.layers.Dense(vocab_size, activation='softmax')
+        self.backward_lstm = tf.keras.layers.LSTM(model_dim, return_sequences=True, go_backwards=True)
+        self.backward_outputs = tf.keras.layers.Dense(vocab_size, activation='softmax')
+    
+    def call(self, x, training):
+        x = self.embedding(x)
+        forward = self.forward_lstm(x)
+        forward_outputs = self.forward_outputs(forward)
+        backward = self.backward_lstm(x)
+        backward_outputs = self.backward_outputs(backward)
+        return forward_outputs, backward_outputs
+    
+    def train_step(self, data):
+        x, (forward_y, backward_y) = data
+
+        with tf.GradientTape() as tape:
+            forward_outputs, backward_outputs = self(x, training=True)  # Forward pass
+            forward_loss = self.compiled_loss(forward_y, forward_outputs)
+            backward_loss = self.compiled_loss(backward_y, backward_outputs)
+            loss = forward_loss + backward_loss
+            
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        return
+
+    def get_representation(self, x):
+        x = self.embedding(x)
+        forward = self.forward_lstm(x)
+        backward = self.backward_lstm(x)
+        return forward, backward

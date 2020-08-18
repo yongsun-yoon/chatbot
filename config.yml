@@ -11,6 +11,11 @@ pipeline:
     analyzer: "char_wb"
     min_ngram: 1
     max_ngram: 4
+  - name: custom.featurizer.FlairFeaturizer
+    epochs: 100
+    model_size: 64
+    seq_len: 200
+    train: True
   - name: custom.featurizer.WordEmbedFeaturizer
     # model: 'word2vec'
     # model_path: 'models/word2vec'
