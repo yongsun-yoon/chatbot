@@ -9,6 +9,7 @@ from rasa.nlu.components import Component
 from rasa.nlu.featurizers.featurizer import DenseFeaturizer
 from rasa.nlu.tokenizers.convert_tokenizer import ConveRTTokenizer
 from rasa.nlu.config import RasaNLUModelConfig
+from rasa.nlu.model import Metadata
 from rasa.nlu.training_data import Message, TrainingData
 from rasa.nlu.constants import (
     TEXT,
@@ -54,18 +55,12 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         return [MecabTokenizer]
 
     def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None) -> None:
-        super(WordEmbedFeaturizer, self).__init__(component_config)s
+        super(WordEmbedFeaturizer, self).__init__(component_config)
         self.model = model
 
     @classmethod
     def required_packages(cls) -> List[Text]:
         return ["gensim"]
-    
-    def get_model_class(self):
-        if self.component_config[MODEL] == 'fasttext':
-            return FastText
-        elif self.component_config[MODEL] == 'word2vec':
-            return Word2Vec
 
     def get_data_from_examples(self, examples: List[Message], attribute: Text = TEXT) -> List[List[str]]:
         list_of_tokens = [example.get(TOKENS_NAMES[attribute]) for example in examples]
@@ -81,7 +76,7 @@ class WordEmbedFeaturizer(DenseFeaturizer):
             non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
         
         data = self.get_data_from_examples(non_empty_examples)
-        model_class = self.get_model_class()
+        model_class = FastText if self.component_config[MODEL] == 'fasttext' else Word2Vec
         model = model_class(        
                 data,
                 size=self.component_config[MODEL_SIZE], 
@@ -130,7 +125,6 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         **kwargs: Any,
     ) -> None:
 
-
         print('Dense Featurizer Training...')
         self.model = self._train(training_data, config, **kwargs)
         print('Dense Featurizer Training Completed')
@@ -166,10 +160,8 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         )
     
     def persist(self, file_name: Text, model_dir: Text) -> Dict[Text, Any]:
-        model_dir = Path(model_dir)
-        gensim_model_file = model_dir / f"{file_name}.{self.component_config[MODEL]}"
-        io_utils.create_directory_for_file(gensim_model_file)
-        self.model.save(gensim_model_file)
+        gensim_model_path = os.path.join(model_dir, f'{file_name}.gensim_model')
+        self.model.save(gensim_model_path)
         return {"file" : file_name}
 
     @classmethod
@@ -178,6 +170,7 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         meta: Dict[Text, Any],
         model_dir: Text = None,
         model_metadata: Metadata = None,
+        cached_component = None,
         **kwargs: Any,
     ) -> "Featurizer":
         """Loads the trained model from the provided directory."""
@@ -189,8 +182,8 @@ class WordEmbedFeaturizer(DenseFeaturizer):
             )
             return cls(component_config=meta)
 
-        model_class = cls.get_model_class()
-        model_path = os.path.join(model_dir, f"{meta['file']}.{self.component_config[MODEL]}")
+        model_class = FastText if meta['model'] == 'fasttext' else Word2Vec
+        model_path = os.path.join(model_dir, f"{meta['file']}.{meta['model']}")
         model = model_class(model_path)
         return cls(component_config=meta, model=model)
 
@@ -261,7 +254,7 @@ class FlairFeaturizer(DenseFeaturizer):
         data, vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
         input_data, forward_data, backward_data = self._preprocess_data(data, vocab)
 
-        model = FlairEmbedding(len(self.vocab), self.component_config[MODEL_SIZE])
+        model = FlairEmbedding(len(vocab), self.component_config[MODEL_SIZE])
         model.compile(
             optimizer = tf.keras.optimizers.Adam(),
             loss = 'sparse_categorical_crossentropy'
@@ -301,7 +294,7 @@ class FlairFeaturizer(DenseFeaturizer):
     def _compute_features(self, batch_examples: List[Message], attribute: Text = TEXT) -> Tuple[np.ndarray, List[int]]:
 
         batch_data = self.get_data_from_examples(batch_examples, attribute)
-        batch_data, _, _ = self._preprocess_data(batch_data)
+        batch_data, _, _ = self._preprocess_data(batch_data, self.vocab)
         forward, backward = self.get_representation(batch_data)
 
         list_of_tokens = [example.get(TOKENS_NAMES[attribute])[:-1] for example in batch_examples] # without cls token
@@ -363,12 +356,12 @@ class FlairFeaturizer(DenseFeaturizer):
         )
 
     def persist(self, file_name: Text, model_dir: Text) -> Dict[Text, Any]:
-        model_dir = Path(model_dir)
-        tf_model_path= model_dir / f"{file_name}.tf_model"
-        io_utils.create_directory_for_file(tf_model_path)
+        tf_model_path = os.path.join(model_dir, f'{file_name}.tf_model')
+        vocab_path = os.path.join(model_dir, f'{file_name}.vocab.pkl')
+        os.makedirs(tf_model_path)
 
         tf.keras.models.save_model(self.model, tf_model_path)        
-        io_utils.pickle_dump(model_dir / f"{file_name}.vocab.pkl", self.vocab)
+        io_utils.pickle_dump(vocab_path, self.vocab)
         return {"file" : file_name}
 
     @classmethod
@@ -377,6 +370,7 @@ class FlairFeaturizer(DenseFeaturizer):
         meta: Dict[Text, Any],
         model_dir: Text = None,
         model_metadata: Metadata = None,
+        cached_component = None,
         **kwargs: Any,
     ) -> "Featurizer":
         """Loads the trained model from the provided directory."""
@@ -389,10 +383,10 @@ class FlairFeaturizer(DenseFeaturizer):
             return cls(component_config=meta)
 
         file_name = meta.get("file")
-        model_dir = Path(model_dir)
+        tf_model_path = os.path.join(model_dir, f'{file_name}.tf_model')
+        vocab_path = os.path.join(model_dir, f'{file_name}.vocab.pkl')
 
-        tf_model_path = model_dir / f"{file_name}.tf_model"
         model = tf.keras.models.load_model(tf_model_path)
-        vocab = io_utils.pickle_load(model_dir / f"{file_name}.vocab.pkl")
+        vocab = io_utils.pickle_load(vocab_path)
 
         return cls(component_config=meta, model=model, vocab=vocab)
