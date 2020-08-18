@@ -20,7 +20,7 @@ pipeline:
   - name: custom.featurizer.FlairFeaturizer
     epochs: 100
     model_size: 64
-    seq_len: 200
+    seq_len: 100
   - name: DIETClassifier
     epochs: 100
   - name: EntitySynonymMapper
