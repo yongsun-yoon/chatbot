@@ -1048,6 +1048,7 @@ class CustomModel(RasaModel):
             loss = tf.keras.losses.sparse_categorical_crossentropy(labels, preds)
             loss = tf.reduce_mean(loss)
             acc = tf.keras.metrics.categorical_accuracy(labels, tf.argmax(preds, axis=-1))            
+            
             losses.append(loss)
             self.intent_loss.update_state(loss)
             self.intent_acc.update_state(acc)
