@@ -15,7 +15,7 @@ pipeline:
     epochs: 100
     model_size: 64
     seq_len: 100
-  - name: cusotm.classifier.CustomClassifier
+  - name: custom.classifier.CustomClassifier
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector

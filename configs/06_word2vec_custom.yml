@@ -17,7 +17,7 @@ pipeline:
     window_size: 7
     min_count: 1
     epochs: 10
-  - name: cusotm.classifier.CustomClassifier
+  - name: custom.classifier.CustomClassifier
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector
