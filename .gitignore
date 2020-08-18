@@ -1,3 +1,5 @@
 results/*
 notebook/*
 */__pycache__
+models/*
+!models/.gitkeep

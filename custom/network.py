@@ -6,11 +6,12 @@ from rasa.utils.tensorflow import layers
 from typing import Any, Dict, List, Optional, Text, Tuple, Union, Type
 
 class InputLayer(tf.keras.layers.Layer):
-    def __init__(self, dense_dim: List[int], reg_lambda:float, drop_rate:float):
+    def __init__(self, dense_dim: List[int], model_dim: int, reg_lambda:float, drop_rate:float):
         super(InputLayer, self).__init__()
         self.dense_layers = [tf.keras.layers.Dense(i, activation='relu') for i in dense_dim]
         self.sparse_dropout_layer = layers.SparseDropout(drop_rate)
         self.sparse_to_dense_layer = layers.DenseForSparse(units=dense_dim[0], reg_lambda=reg_lambda)
+        self.output_layer = tf.keras.layers.Dense(model_dim, activation='relu')
 
     def call(self, 
             features: List[Union[np.ndarray, tf.Tensor, tf.SparseTensor]], 
@@ -29,6 +30,7 @@ class InputLayer(tf.keras.layers.Layer):
         x = tf.concat(dense_features, axis=-1) * mask
         for d in self.dense_layers:
             x = d(x)
+        x = self.output_layer(x)
         return x
 
 
@@ -157,3 +159,19 @@ class TransformerLayer(tf.keras.layers.Layer):
         out2 = self.layernorm2(out1 + out2)
         return out2
 
+class FlairEmbedding(tf.keras.Model):
+    def __init__(self, vocab_size, model_dim):
+        super(FlairEmbedding, self).__init__()
+        self.embedding = tf.keras.layers.Embedding(vocab_size, model_dim)
+        self.forward_lstm = tf.keras.layers.LSTM(model_dim, return_sequences=True)
+        self.forward_outputs = tf.keras.layers.Dense(vocab_size, activation='softmax')
+        self.backward_lstm = tf.keras.layers.LSTM(model_dim, return_sequences=True, go_backwards=True)
+        self.backward_outputs = tf.keras.layers.Dense(vocab_size, activation='softmax')
+    
+    def call(self, x, training):
+        x = self.embedding(x)
+        forward = self.forward_lstm(x)
+        forward_outputs = self.forward_outputs(forward)
+        backward = self.backward_lstm(x)
+        backward_outputs = self.backward_outputs(backward)
+        return forward_outputs, backward_outputs
