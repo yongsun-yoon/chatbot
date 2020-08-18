@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Text, Tuple, Type
 from tqdm import tqdm
+from pathlib import Path
 
 from rasa.constants import DOCS_URL_COMPONENTS
 from rasa.nlu.tokenizers.tokenizer import Token
@@ -18,6 +19,7 @@ from rasa.nlu.constants import (
 import numpy as np
 import tensorflow as tf
 
+import rasa.utils.io as io_utils
 import rasa.utils.train_utils as train_utils
 import rasa.utils.common as common_utils
 
@@ -51,23 +53,19 @@ class WordEmbedFeaturizer(DenseFeaturizer):
     def required_components(cls) -> List[Type[Component]]:
         return [MecabTokenizer]
 
-    def __init__(self, component_config: Optional[Dict[Text, Any]] = None) -> None:
-        super(WordEmbedFeaturizer, self).__init__(component_config)
-        if self.component_config[MODEL] == 'fasttext':
-            self.model_class = FastText
-        elif self.component_config[MODEL] == 'word2vec':
-            self.model_class = Word2Vec
-        
-        base_dir = os.path.join(os.path.dirname(__file__), '..')
-        self.model_path = os.path.join(base_dir, 'model', self.component_config[MODEL])
-        self.model = None
+    def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None) -> None:
+        super(WordEmbedFeaturizer, self).__init__(component_config)s
+        self.model = model
 
     @classmethod
     def required_packages(cls) -> List[Text]:
         return ["gensim"]
-
-    def load_model(self):
-        self.model = self.model_class.load(self.model_path)
+    
+    def get_model_class(self):
+        if self.component_config[MODEL] == 'fasttext':
+            return FastText
+        elif self.component_config[MODEL] == 'word2vec':
+            return Word2Vec
 
     def get_data_from_examples(self, examples: List[Message], attribute: Text = TEXT) -> List[List[str]]:
         list_of_tokens = [example.get(TOKENS_NAMES[attribute]) for example in examples]
@@ -83,14 +81,14 @@ class WordEmbedFeaturizer(DenseFeaturizer):
             non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
         
         data = self.get_data_from_examples(non_empty_examples)
-        model = self.model_class(
-                    data,
-                    size=self.component_config[MODEL_SIZE], 
-                    window=self.component_config[WINDOW_SIZE], 
-                    min_count=self.component_config[MIN_COUNT],
-                    iter=self.component_config[EPOCHS])
-                    
-        model.save(self.model_path)
+        model_class = self.get_model_class()
+        model = model_class(        
+                data,
+                size=self.component_config[MODEL_SIZE], 
+                window=self.component_config[WINDOW_SIZE], 
+                min_count=self.component_config[MIN_COUNT],
+                iter=self.component_config[EPOCHS])
+        return model
 
     def _combine_encodings(
         self,
@@ -134,11 +132,10 @@ class WordEmbedFeaturizer(DenseFeaturizer):
 
 
         print('Dense Featurizer Training...')
-        self._train(training_data, config, **kwargs)
+        self.model = self._train(training_data, config, **kwargs)
         print('Dense Featurizer Training Completed')
 
         batch_size = 64
-        self.load_model()
 
         for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
             non_empty_examples = list(filter(lambda x: x.get(attribute), training_data.training_examples))
@@ -159,10 +156,7 @@ class WordEmbedFeaturizer(DenseFeaturizer):
                         ),
                     )
 
-    def process(self, message: Message, **kwargs: Any) -> None:
-        if not self.model:
-            self.load_model()
-            
+    def process(self, message: Message, **kwargs: Any) -> None:            
         features = self._compute_features([message])[0]
         message.set(
             DENSE_FEATURE_NAMES[TEXT],
@@ -170,6 +164,36 @@ class WordEmbedFeaturizer(DenseFeaturizer):
                 message, features, DENSE_FEATURE_NAMES[TEXT]
             ),
         )
+    
+    def persist(self, file_name: Text, model_dir: Text) -> Dict[Text, Any]:
+        model_dir = Path(model_dir)
+        gensim_model_file = model_dir / f"{file_name}.{self.component_config[MODEL]}"
+        io_utils.create_directory_for_file(gensim_model_file)
+        self.model.save(gensim_model_file)
+        return {"file" : file_name}
+
+    @classmethod
+    def load(
+        cls,
+        meta: Dict[Text, Any],
+        model_dir: Text = None,
+        model_metadata: Metadata = None,
+        **kwargs: Any,
+    ) -> "Featurizer":
+        """Loads the trained model from the provided directory."""
+
+        if not model_dir or not meta.get("file"):
+            logger.debug(
+                f"Failed to load model. "
+                f"Maybe the path '{os.path.abspath(model_dir)}' doesn't exist?"
+            )
+            return cls(component_config=meta)
+
+        model_class = cls.get_model_class()
+        model_path = os.path.join(model_dir, f"{meta['file']}.{self.component_config[MODEL]}")
+        model = model_class(model_path)
+        return cls(component_config=meta, model=model)
+
 
 
 class FlairFeaturizer(DenseFeaturizer):
@@ -182,22 +206,14 @@ class FlairFeaturizer(DenseFeaturizer):
     def required_components(cls) -> List[Type[Component]]:
         return [MecabTokenizer]
 
-    def __init__(self, component_config: Optional[Dict[Text, Any]] = None) -> None:
+    def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None, vocab = None) -> None:
         super(FlairFeaturizer, self).__init__(component_config)
-        base_dir = os.path.join(os.path.dirname(__file__), '..')
-        self.model_path = os.path.join(base_dir, 'models/flair')
-        if not os.path.isdir(self.model_path):
-            os.makedirs(self.model_path)
-        self.model = None
+        self.model = model
+        self.vocab = vocab
 
     @classmethod
     def required_packages(cls) -> List[Text]:
         return ["tensorflow"]
-
-    def load_model(self):
-        self.model = tf.keras.models.load_model(self.model_path)
-        with open(os.path.join(self.model_path, 'vocab.pkl'), 'rb') as f:
-            self.vocab = pickle.load(f)
 
     def get_data_from_examples(self, examples: List[Message], attribute: Text = TEXT, return_vocab: bool = False) -> List[List[str]]:
         list_of_tokens = [example.get(TOKENS_NAMES[attribute])[:-1] for example in examples] # without cls token
@@ -226,8 +242,8 @@ class FlairFeaturizer(DenseFeaturizer):
         seq = np.pad(seq, (0, self.component_config[SEQ_LEN] - len(seq)), 'constant')
         return seq
 
-    def _preprocess_data(self, data):
-        char_to_idx = {j:i for i,j in enumerate(self.vocab)}
+    def _preprocess_data(self, data, vocab):
+        char_to_idx = {j:i for i,j in enumerate(vocab)}
         input_data = [[char_to_idx.get(char, char_to_idx['[UNK]']) for char in sentence] for sentence in data]
         forward_data = [sentence[1:] for sentence in input_data]
         backward_data = [[char_to_idx['[PAD]']] + sentence[:-1] for sentence in input_data]
@@ -242,8 +258,8 @@ class FlairFeaturizer(DenseFeaturizer):
         for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
             non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
         
-        data, self.vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
-        input_data, forward_data, backward_data = self._preprocess_data(data)
+        data, vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
+        input_data, forward_data, backward_data = self._preprocess_data(data, vocab)
 
         model = FlairEmbedding(len(self.vocab), self.component_config[MODEL_SIZE])
         model.compile(
@@ -251,10 +267,8 @@ class FlairFeaturizer(DenseFeaturizer):
             loss = 'sparse_categorical_crossentropy'
         )
         model.fit(input_data, [forward_data, backward_data], epochs=self.component_config[EPOCHS])
+        return model, vocab
 
-        tf.keras.models.save_model(model, self.model_path)
-        with open(os.path.join(self.model_path, 'vocab.pkl'), 'wb') as f:
-            pickle.dump(self.vocab, f)
 
     def get_representation(self, x):
         x = self.model.embedding(x)
@@ -313,12 +327,10 @@ class FlairFeaturizer(DenseFeaturizer):
     ) -> None:
 
         print('Dense Featurizer Training...')
-        self._train(training_data, config, **kwargs)
+        self.model, self.vocab = self._train(training_data, config, **kwargs)
         print('Dense Featurizer Training Completed')
 
         batch_size = 64
-        self.load_model()
-
         for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
             non_empty_examples = list(filter(lambda x: x.get(attribute), training_data.training_examples))
             progress_bar = tqdm(range(0, len(non_empty_examples), batch_size), desc=attribute.capitalize() + " batches")
@@ -349,3 +361,38 @@ class FlairFeaturizer(DenseFeaturizer):
                 message, features, DENSE_FEATURE_NAMES[TEXT]
             ),
         )
+
+    def persist(self, file_name: Text, model_dir: Text) -> Dict[Text, Any]:
+        model_dir = Path(model_dir)
+        tf_model_path= model_dir / f"{file_name}.tf_model"
+        io_utils.create_directory_for_file(tf_model_path)
+
+        tf.keras.models.save_model(self.model, tf_model_path)        
+        io_utils.pickle_dump(model_dir / f"{file_name}.vocab.pkl", self.vocab)
+        return {"file" : file_name}
+
+    @classmethod
+    def load(
+        cls,
+        meta: Dict[Text, Any],
+        model_dir: Text = None,
+        model_metadata: Metadata = None,
+        **kwargs: Any,
+    ) -> "Featurizer":
+        """Loads the trained model from the provided directory."""
+
+        if not model_dir or not meta.get("file"):
+            logger.debug(
+                f"Failed to load model. "
+                f"Maybe the path '{os.path.abspath(model_dir)}' doesn't exist?"
+            )
+            return cls(component_config=meta)
+
+        file_name = meta.get("file")
+        model_dir = Path(model_dir)
+
+        tf_model_path = model_dir / f"{file_name}.tf_model"
+        model = tf.keras.models.load_model(tf_model_path)
+        vocab = io_utils.pickle_load(model_dir / f"{file_name}.vocab.pkl")
+
+        return cls(component_config=meta, model=model, vocab=vocab)

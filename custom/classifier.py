@@ -721,7 +721,7 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
         model_metadata: Metadata = None,
         cached_component: Optional["DIETClassifier"] = None,
         **kwargs: Any,
-    ) -> "DIETClassifier":
+    ) -> "Classifier":
         """Loads the trained model from the provided directory."""
 
         if not model_dir or not meta.get("file"):
