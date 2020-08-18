@@ -3,7 +3,7 @@
 language: kr
 pipeline:
   - name: custom.tokenizer.MecabTokenizer
-    mecab_dir: 'C:/mecab/mecab-ko-dic'
+    mecab_dir: '/tmp/mecab-ko-dic-2.1.1-20180720'
   - name: RegexFeaturizer
   - name: LexicalSyntacticFeaturizer
   - name: CountVectorsFeaturizer
