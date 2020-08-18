@@ -143,6 +143,7 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
         # ## Evaluation parameters
         EVAL_NUM_EPOCHS: 20,
         EVAL_NUM_EXAMPLES: 0,
+        RANKING_LENGTH: 20,
         
     }
 
@@ -577,28 +578,18 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
         if predict_out is None:
             return label, label_ranking
 
-        message_sim = predict_out["i_scores"].numpy()
+        message_score = predict_out["i_scores"].numpy().flatten()
+        label_ids = message_score.argsort()[::-1]
 
-        message_sim = message_sim.flatten()  # sim is a matrix
-
-        label_ids = message_sim.argsort()[::-1]
-
-        if (
-            self.component_config[LOSS_TYPE] == SOFTMAX
-            and self.component_config[RANKING_LENGTH] > 0
-        ):
-            message_sim = train_utils.normalize(
-                message_sim, self.component_config[RANKING_LENGTH]
-            )
-
-        message_sim[::-1].sort()
-        message_sim = message_sim.tolist()
+        message_score = train_utils.normalize(message_score, self.component_config[RANKING_LENGTH])
+        message_score[::-1].sort()
+        message_score = message_score.tolist()
 
         # if X contains all zeros do not predict some label
         if label_ids.size > 0:
             label = {
                 "name": self.index_label_id_mapping[label_ids[0]],
-                "confidence": message_sim[0],
+                "confidence": message_score[0],
             }
 
             if (
@@ -609,7 +600,7 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
             else:
                 output_length = LABEL_RANKING_LENGTH
 
-            ranking = list(zip(list(label_ids), message_sim))
+            ranking = list(zip(list(label_ids), message_score))
             ranking = ranking[:output_length]
             label_ranking = [
                 {"name": self.index_label_id_mapping[label_idx], "confidence": score}
