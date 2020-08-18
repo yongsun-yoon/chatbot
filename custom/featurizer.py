@@ -35,7 +35,6 @@ logger = logging.getLogger(__name__)
 MODEL = 'model'
 MODEL_PATH = 'model_path'
 POS_NAME = 'pos'
-TRAIN = 'train'
 MODEL_SIZE = 'model_size'
 WINDOW_SIZE = 'window_size'
 MIN_COUNT = 'min_count'
@@ -60,7 +59,7 @@ class WordEmbedFeaturizer(DenseFeaturizer):
             self.model_class = Word2Vec
         
         base_dir = os.path.join(os.path.dirname(__file__), '..')
-        self.model_path = os.path.join(base_dir, self.component_config[MODEL_PATH])
+        self.model_path = os.path.join(base_dir, 'model', self.component_config[MODEL])
         self.model = None
 
     @classmethod
@@ -133,10 +132,10 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         **kwargs: Any,
     ) -> None:
 
-        if self.component_config[TRAIN]:
-            print('Dense Featurizer Training...')
-            self._train(training_data, config, **kwargs)
-            print('Dense Featurizer Training Completed')
+
+        print('Dense Featurizer Training...')
+        self._train(training_data, config, **kwargs)
+        print('Dense Featurizer Training Completed')
 
         batch_size = 64
         self.load_model()
@@ -313,10 +312,9 @@ class FlairFeaturizer(DenseFeaturizer):
         **kwargs: Any,
     ) -> None:
 
-        if self.component_config[TRAIN]:
-            print('Dense Featurizer Training...')
-            self._train(training_data, config, **kwargs)
-            print('Dense Featurizer Training Completed')
+        print('Dense Featurizer Training...')
+        self._train(training_data, config, **kwargs)
+        print('Dense Featurizer Training Completed')
 
         batch_size = 64
         self.load_model()

@@ -1,0 +1,29 @@
+# Configuration for Rasa NLU.
+# https://rasa.com/docs/rasa/nlu/components/
+language: kr
+pipeline:
+  - name: custom.tokenizer.MecabTokenizer
+    mecab_dir: 'C:/mecab/mecab-ko-dic'
+  - name: RegexFeaturizer
+  - name: LexicalSyntacticFeaturizer
+  - name: CountVectorsFeaturizer
+  - name: CountVectorsFeaturizer
+    analyzer: "char_wb"
+    min_ngram: 1
+    max_ngram: 4
+  - name: custom.featurizer.WordEmbedFeaturizer
+    model: 'fasttext'
+    model_size: 64
+    window_size: 7
+    min_count: 1
+    epochs: 10
+  - name: CustomClassifier
+    epochs: 100
+  - name: EntitySynonymMapper
+  - name: ResponseSelector
+    epochs: 1
+
+# Configuration for Rasa Core.
+# https://rasa.com/docs/rasa/core/policies/
+policies:
+  - name: FormPolicy
