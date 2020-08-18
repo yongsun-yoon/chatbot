@@ -6,11 +6,12 @@ from rasa.utils.tensorflow import layers
 from typing import Any, Dict, List, Optional, Text, Tuple, Union, Type
 
 class InputLayer(tf.keras.layers.Layer):
-    def __init__(self, dense_dim: List[int], reg_lambda:float, drop_rate:float):
+    def __init__(self, dense_dim: List[int], model_dim: int, reg_lambda:float, drop_rate:float):
         super(InputLayer, self).__init__()
         self.dense_layers = [tf.keras.layers.Dense(i, activation='relu') for i in dense_dim]
         self.sparse_dropout_layer = layers.SparseDropout(drop_rate)
         self.sparse_to_dense_layer = layers.DenseForSparse(units=dense_dim[0], reg_lambda=reg_lambda)
+        self.output_layer = tf.keras.layers.Dense(model_dim, activation='relu')
 
     def call(self, 
             features: List[Union[np.ndarray, tf.Tensor, tf.SparseTensor]], 
@@ -29,6 +30,7 @@ class InputLayer(tf.keras.layers.Layer):
         x = tf.concat(dense_features, axis=-1) * mask
         for d in self.dense_layers:
             x = d(x)
+        x = self.output_layer(x)
         return x
 
 

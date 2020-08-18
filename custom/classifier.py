@@ -115,149 +115,42 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
 
     # please make sure to update the docs when changing a default parameter
     defaults = {
-        # ## Architecture of the used neural network
-        # Hidden layer sizes for layers before the embedding layers for user message
-        # and labels.
-        # The number of hidden layers is equal to the length of the corresponding
-        # list.
-        HIDDEN_LAYERS_SIZES: {TEXT: [], LABEL: []},
-        # Whether to share the hidden layer weights between user message and labels.
-        SHARE_HIDDEN_LAYERS: False,
-        # Number of units in transformer
-        TRANSFORMER_SIZE: 256,
-        # Number of transformer layers
-        NUM_TRANSFORMER_LAYERS: 2,
-        # Number of attention heads in transformer
-        NUM_HEADS: 4,
-        # If 'True' use key relative embeddings in attention
-        KEY_RELATIVE_ATTENTION: False,
-        # If 'True' use value relative embeddings in attention
-        VALUE_RELATIVE_ATTENTION: False,
-        # Max position for relative embeddings
-        MAX_RELATIVE_POSITION: None,
-        # Use a unidirectional or bidirectional encoder.
-        UNIDIRECTIONAL_ENCODER: False,
-        # ## Training parameters
-        # Initial and final batch sizes:
-        # Batch size will be linearly increased for each epoch.
-        BATCH_SIZES: [64, 256],
-        # Strategy used when creating batches.
-        # Can be either 'sequence' or 'balanced'.
-        BATCH_STRATEGY: BALANCED,
-        # Number of epochs to train
-        EPOCHS: 300,
-        # Set random seed to any 'int' to get reproducible results
-        RANDOM_SEED: None,
-        # Initial learning rate for the optimizer
-        LEARNING_RATE: 0.001,
-        # ## Parameters for embeddings
-        # Dimension size of embedding vectors
-        EMBEDDING_DIMENSION: 20,
-        # Default dense dimension to use if no dense features are present.
-        DENSE_DIMENSION: {TEXT: 512, LABEL: 20},
-        # The number of incorrect labels. The algorithm will minimize
-        # their similarity to the user input during training.
-        NUM_NEG: 20,
-        # Type of similarity measure to use, either 'auto' or 'cosine' or 'inner'.
-        SIMILARITY_TYPE: AUTO,
-        # The type of the loss function, either 'softmax' or 'margin'.
-        LOSS_TYPE: SOFTMAX,
-        # Number of top actions to normalize scores for loss type 'softmax'.
-        # Set to 0 to turn off normalization.
-        RANKING_LENGTH: 10,
-        # Indicates how similar the algorithm should try to make embedding vectors
-        # for correct labels.
-        # Should be 0.0 < ... < 1.0 for 'cosine' similarity type.
-        MAX_POS_SIM: 0.8,
-        # Maximum negative similarity for incorrect labels.
-        # Should be -1.0 < ... < 1.0 for 'cosine' similarity type.
-        MAX_NEG_SIM: -0.4,
-        # If 'True' the algorithm only minimizes maximum similarity over
-        # incorrect intent labels, used only if 'loss_type' is set to 'margin'.
-        USE_MAX_NEG_SIM: True,
-        # If 'True' scale loss inverse proportionally to the confidence
-        # of the correct prediction
-        SCALE_LOSS: True,
-        # ## Regularization parameters
-        # The scale of regularization
-        REGULARIZATION_CONSTANT: 0.002,
-        # The scale of how important is to minimize the maximum similarity
-        # between embeddings of different labels,
-        # used only if 'loss_type' is set to 'margin'.
-        NEGATIVE_MARGIN_SCALE: 0.8,
-        # Dropout rate for encoder
-        DROP_RATE: 0.2,
-        # Dropout rate for attention
-        DROP_RATE_ATTENTION: 0,
-        # Sparsity of the weights in dense layers
-        WEIGHT_SPARSITY: 0.8,
-        # If 'True' apply dropout to sparse tensors
-        SPARSE_INPUT_DROPOUT: True,
-        # ## Evaluation parameters
-        # How often calculate validation accuracy.
-        # Small values may hurt performance, e.g. model accuracy.
-        EVAL_NUM_EPOCHS: 20,
-        # How many examples to use for hold out validation set
-        # Large values may hurt performance, e.g. model accuracy.
-        EVAL_NUM_EXAMPLES: 0,
-        # ## Model config
-        # If 'True' intent classification is trained and intent predicted.
+        # ## Basic parameters
         INTENT_CLASSIFICATION: True,
-        # If 'True' named entity recognition is trained and entities predicted.
         ENTITY_RECOGNITION: True,
-        # If 'True' random tokens of the input message will be masked and the model
-        # should predict those tokens.
         MASKED_LM: False,
-        # 'BILOU_flag' determines whether to use BILOU tagging or not.
-        # If set to 'True' labelling is more rigorous, however more
-        # examples per entity are required.
-        # Rule of thumb: you should have more than 100 examples per entity.
         BILOU_FLAG: True,
-        # If you want to use tensorboard to visualize training and validation metrics,
-        # set this option to a valid output directory.
         TENSORBOARD_LOG_DIR: None,
-        # Define when training metrics for tensorboard should be logged.
-        # Either after every epoch or for every training step.
-        # Valid values: 'epoch' and 'minibatch'
         TENSORBOARD_LOG_LEVEL: "epoch",
+
+        # ## Model parameters
+        TRANSFORMER_SIZE: 256,
+        NUM_TRANSFORMER_LAYERS: 2,
+        NUM_HEADS: 4,
+        EMBEDDING_DIMENSION: [64, 128],  # Dimension size of embedding vectors
+        REGULARIZATION_CONSTANT: 0.002,
+        DROP_RATE: 0.2,
+        WEIGHT_SPARSITY: 0.8,
+        SPARSE_INPUT_DROPOUT: True,
+
+        # ## Training parameters
+        EPOCHS: 100,
+        RANDOM_SEED: None,
+        LEARNING_RATE: 0.001,
+        BATCH_SIZES: [64, 256], # Batch size will be linearly increased for each epoch.
+        BATCH_STRATEGY: BALANCED, # Strategy used when creating batches. ('sequence' or 'balanced')
+
+        # ## Evaluation parameters
+        EVAL_NUM_EPOCHS: 20,
+        EVAL_NUM_EXAMPLES: 0,
+        
     }
 
-    # init helpers
-    def _check_masked_lm(self) -> None:
-        if (
-            self.component_config[MASKED_LM]
-            and self.component_config[NUM_TRANSFORMER_LAYERS] == 0
-        ):
-            raise ValueError(
-                f"If number of transformer layers is 0, "
-                f"'{MASKED_LM}' option should be 'False'."
-            )
-
-    def _check_share_hidden_layers_sizes(self) -> None:
-        if self.component_config.get(SHARE_HIDDEN_LAYERS):
-            first_hidden_layer_sizes = next(
-                iter(self.component_config[HIDDEN_LAYERS_SIZES].values())
-            )
-            # check that all hidden layer sizes are the same
-            identical_hidden_layer_sizes = all(
-                current_hidden_layer_sizes == first_hidden_layer_sizes
-                for current_hidden_layer_sizes in self.component_config[
-                    HIDDEN_LAYERS_SIZES
-                ].values()
-            )
-            if not identical_hidden_layer_sizes:
-                raise ValueError(
-                    f"If hidden layer weights are shared, "
-                    f"{HIDDEN_LAYERS_SIZES} must coincide."
-                )
 
     def _check_config_parameters(self) -> None:
         self.component_config = train_utils.check_deprecated_options(
             self.component_config
         )
-
-        self._check_masked_lm()
-        self._check_share_hidden_layers_sizes()
 
         self.component_config = train_utils.update_similarity_type(
             self.component_config
@@ -990,15 +883,6 @@ class CustomModel(RasaModel):
                     f"No label features specified. "
                     f"Cannot train '{self.__class__.__name__}' model."
                 )
-            if (
-                self.config[SHARE_HIDDEN_LAYERS]
-                and self.data_signature[TEXT_FEATURES]
-                != self.data_signature[LABEL_FEATURES]
-            ):
-                raise ValueError(
-                    "If hidden layer weights are shared, data signatures "
-                    "for text_features and label_features must coincide."
-                )
 
         if self.config[ENTITY_RECOGNITION] and TAG_IDS not in self.data_signature:
             raise ValueError(
@@ -1020,8 +904,8 @@ class CustomModel(RasaModel):
 
     def _prepare_layers(self):
         self._tf_layers: Dict[Text : tf.keras.layers.Layer] = {}
-        self._tf_layers['input_layer'] = InputLayer(dense_dim=[32, 64], reg_lambda=self.config[REGULARIZATION_CONSTANT], drop_rate=0.2)
-        self._tf_layers['base_layer'] = BaseLayer(model_dim=64, ffn_dim=64, num_head=4, drop_rate=0.2, num_layer=2)
+        self._tf_layers['input_layer'] = InputLayer(dense_dim=self.config[EMBEDDING_DIMENSION], model_dim=self.config[TRANSFORMER_SIZE], reg_lambda=self.config[REGULARIZATION_CONSTANT], drop_rate=self.config[DROP_RATE])
+        self._tf_layers['base_layer'] = BaseLayer(model_dim=self.config[TRANSFORMER_SIZE], ffn_dim=self.config[TRANSFORMER_SIZE], num_head=self.config[NUM_HEADS], drop_rate=self.config[DROP_RATE], num_layer=self.config[NUM_TRANSFORMER_LAYERS])
         self._tf_layers['intent_layer'] = IntentLayer(self._num_intents)
         self._tf_layers['entity_layer'] = EntityLayer(self._num_tags)
         self._tf_layers['intent_acc'] = tf.metrics.Accuracy()
