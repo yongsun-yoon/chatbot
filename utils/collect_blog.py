@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--query', default='호텔')
 parser.add_argument('--date_from', default='20190101')
 parser.add_argument('--date_to', default='20191231')
-parser.add_argument('--num_posts', default=3000)
+parser.add_argument('--num_posts', default=1000)
 
 
 def url_to_soup(url):

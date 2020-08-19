@@ -99,6 +99,7 @@ class MecabTokenizer(Tokenizer):
         message.set(POS_NAME, pos)
 
     def persist(self, file_name: Text, model_dir: Text) -> Dict[Text, Any]:
+        self.mecab = '' # mecab 객체 저장 시 에러 발생
         return {"file" : file_name}
 
     @staticmethod
