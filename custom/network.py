@@ -33,56 +33,6 @@ class InputLayer(tf.keras.layers.Layer):
         x = self.output_layer(x)
         return x
 
-
-class BaseLayer(tf.keras.layers.Layer):
-    def __init__(self, model_dim, ffn_dim, num_head, drop_rate, num_layer):
-        super(BaseLayer, self).__init__()
-        self.trm = [TransformerLayer(model_dim, ffn_dim, num_head, drop_rate) for _ in range(num_layer)]
-    
-    def call(self, x: tf.Tensor, pad_mask: Optional[tf.Tensor] = None, training: Optional[Union[tf.Tensor, bool]] = None) -> tf.Tensor:
-        for t in self.trm:
-            x = t(x, mask=pad_mask, training=training)
-        return x
-
-
-class IntentLayer(tf.keras.layers.Layer):
-    def __init__(self, num_intent):
-        super(IntentLayer, self).__init__()
-        self.dense = tf.keras.layers.Dense(num_intent, activation='softmax')
-
-    def call(self, x: tf.Tensor, sequence_lengths: tf.Tensor, training: Optional[Union[tf.Tensor, bool]] = None) -> tf.Tensor:
-        last_token_index = tf.maximum(0, sequence_lengths - 1)
-        batch_index = tf.range(tf.shape(last_token_index)[0])
-        indices = tf.stack([batch_index, last_token_index], axis=1)
-        x = tf.gather_nd(x, indices)
-        x = self.dense(x)
-        return x
-    
-class EntityLayer(tf.keras.layers.Layer):
-    def __init__(self, num_tag):
-        super(EntityLayer, self).__init__()
-        self.num_tag = num_tag
-        self.dense = tf.keras.layers.Dense(num_tag)
-    
-    def build(self, input_shape: tf.TensorShape) -> None:
-        self.transition_params = self.add_weight(shape=(self.num_tag, self.num_tag), name='transition params')
-        self.built = True
-
-    def call(self, x: tf.Tensor, y: tf.Tensor, sequence_lengths: tf.Tensor, training: Optional[Union[tf.Tensor, bool]] = None):
-        x = self.dense(x)
-        
-        if training:
-            log_likelihood, _ = tfa.text.crf_log_likelihood(x, y, sequence_lengths, self.transition_params)
-        else:
-            log_likelihood = None
-
-        preds, _ = tfa.text.crf.crf_decode(x, self.transition_params, sequence_lengths)
-        mask = tf.sequence_mask(sequence_lengths, maxlen=tf.shape(preds)[1], dtype=preds.dtype)
-        preds = preds * mask
-
-        return log_likelihood, preds
-
-
 class MultiHeadAttention(tf.keras.layers.Layer):
     def __init__(self, model_dim, num_head):
         super(MultiHeadAttention, self).__init__()
@@ -158,6 +108,66 @@ class TransformerLayer(tf.keras.layers.Layer):
         out2 = self.dropout2(out2, training=training)
         out2 = self.layernorm2(out1 + out2)
         return out2
+
+class BaseLayer(tf.keras.layers.Layer):
+    def __init__(self, model_dim, ffn_dim, num_head, drop_rate, num_layer):
+        super(BaseLayer, self).__init__()
+        self.trm = [TransformerLayer(model_dim, ffn_dim, num_head, drop_rate) for _ in range(num_layer)]
+    
+    def call(self, x: tf.Tensor, pad_mask: Optional[tf.Tensor] = None, training: Optional[Union[tf.Tensor, bool]] = None) -> tf.Tensor:
+        for t in self.trm:
+            x = t(x, mask=pad_mask, training=training)
+        return x
+
+class IntentLayer(tf.keras.layers.Layer):
+    def __init__(self, num_intent):
+        super(IntentLayer, self).__init__()
+        self.dense = tf.keras.layers.Dense(num_intent, activation='softmax')
+
+    def call(self, x: tf.Tensor, sequence_lengths: tf.Tensor, training: Optional[Union[tf.Tensor, bool]] = None) -> tf.Tensor:
+        last_token_index = tf.maximum(0, sequence_lengths - 1)
+        batch_index = tf.range(tf.shape(last_token_index)[0])
+        indices = tf.stack([batch_index, last_token_index], axis=1)
+        x = tf.gather_nd(x, indices)
+        x = self.dense(x)
+        return x
+    
+class CRFEntityLayer(tf.keras.layers.Layer):
+    def __init__(self, num_tag):
+        super(CRFEntityLayer, self).__init__()
+        self.num_tag = num_tag
+        self.dense = tf.keras.layers.Dense(num_tag)
+    
+    def build(self, input_shape: tf.TensorShape) -> None:
+        self.transition_params = self.add_weight(shape=(self.num_tag, self.num_tag), name='transition params')
+        self.built = True
+
+    def call(self, x: tf.Tensor, y: tf.Tensor, sequence_lengths: tf.Tensor, training: Optional[Union[tf.Tensor, bool]] = None):
+        x = self.dense(x)
+        
+        if training:
+            log_likelihood, _ = tfa.text.crf_log_likelihood(x, y, sequence_lengths, self.transition_params)
+        else:
+            log_likelihood = None
+
+        preds, _ = tfa.text.crf.crf_decode(x, self.transition_params, sequence_lengths)
+        mask = tf.sequence_mask(sequence_lengths, maxlen=tf.shape(preds)[1], dtype=preds.dtype)
+        preds = preds * mask
+
+        return log_likelihood, preds
+
+class SoftmaxEntityLayer(tf.keras.layers.Layer):
+    def __init__(self, num_tag):
+        super(SoftmaxEntityLayer, self).__init__()
+        self.num_tag = num_tag
+        self.dense = tf.keras.layers.Dense(num_tag, activation='softmax')
+
+    def call(self, x, sequence_lengths):
+        prob = self.dense(x)
+        preds = tf.argmax(prob, axis=-1)
+        mask = tf.sequence_mask(sequence_lengths, maxlen=preds.shape[-1], dtype=preds.dtype)
+        preds = preds * mask
+        return prob, preds
 
 class FlairEmbedding(tf.keras.Model):
     def __init__(self, vocab_size, model_dim):

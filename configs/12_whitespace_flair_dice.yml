@@ -2,8 +2,7 @@
 # https://rasa.com/docs/rasa/nlu/components/
 language: kr
 pipeline:
-  - name: custom.tokenizer.MecabTokenizer
-    mecab_dir: '/tmp/mecab-ko-dic-2.1.1-20180720'
+  - name: WhitespaceTokenizer
   - name: RegexFeaturizer
   - name: LexicalSyntacticFeaturizer
   - name: CountVectorsFeaturizer
@@ -11,13 +10,12 @@ pipeline:
     analyzer: "char_wb"
     min_ngram: 1
     max_ngram: 4
-  - name: custom.featurizer.WordEmbedFeaturizer
-    model: 'fasttext'
+  - name: custom.featurizer.FlairFeaturizer
+    epochs: 100
     model_size: 64
-    window_size: 7
-    min_count: 1
-    epochs: 10
+    seq_len: 200
   - name: custom.classifier.CustomClassifier
+    model: "Dice"
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector

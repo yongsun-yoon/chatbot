@@ -83,7 +83,7 @@ from rasa.utils.tensorflow.constants import (
     TENSORBOARD_LOG_LEVEL,
 )
 
-from .network import InputLayer, BaseLayer, IntentLayer, EntityLayer
+from .network import InputLayer, BaseLayer, IntentLayer, CRFEntityLayer, SoftmaxEntityLayer
 
 
 logger = logging.getLogger(__name__)
@@ -94,6 +94,8 @@ TEXT_MASK = f"{TEXT}_mask"
 LABEL_MASK = f"{LABEL}_mask"
 LABEL_IDS = f"{LABEL}_ids"
 TAG_IDS = "tag_ids"
+MODEL = 'model'
+DICE_GAMMA = 'dice_gamma'
 
 
 class CustomClassifier(IntentClassifier, EntityExtractor):
@@ -132,6 +134,7 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
         DROP_RATE: 0.2,
         WEIGHT_SPARSITY: 0.8,
         SPARSE_INPUT_DROPOUT: True,
+        DICE_GAMMA: 0.2,
 
         # ## Training parameters
         EPOCHS: 100,
@@ -199,8 +202,12 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
         return LABEL_IDS if self.component_config[INTENT_CLASSIFICATION] else None
 
     @staticmethod
-    def model_class() -> Type[RasaModel]:
-        return CustomModel
+    def model_class(config) -> Type[RasaModel]:
+        if config[MODEL] == 'CRF':
+            model_class = CRFTransformer
+        elif config[MODEL] == 'Dice':
+            model_class = DiceTransformer
+        return model_class
 
     # training data helpers:
     @staticmethod
@@ -536,7 +543,7 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
         # keep one example for persisting and loading
         self.data_example = model_data.first_data_example()
 
-        self.model = self.model_class()(
+        self.model = self.model_class(self.component_config)(
             data_signature=model_data.get_signature(),
             label_data=self._label_data,
             index_label_id_mapping=self.index_label_id_mapping,
@@ -800,7 +807,7 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
         label_key = LABEL_IDS if meta[INTENT_CLASSIFICATION] else None
         model_data_example = RasaModelData(label_key=label_key, data=data_example)
 
-        model = cls.model_class().load(
+        model = cls.model_class(meta).load(
             tf_model_file,
             model_data_example,
             data_signature=model_data_example.get_signature(),
@@ -829,7 +836,7 @@ class CustomClassifier(IntentClassifier, EntityExtractor):
 # pytype: disable=key-error
 
 
-class CustomModel(RasaModel):
+class CRFTransformer(RasaModel):
     def __init__(
         self,
         data_signature: Dict[Text, List[FeatureSignature]],
@@ -840,7 +847,7 @@ class CustomModel(RasaModel):
     ) -> None:
         
         super().__init__(
-            name="CustomModel",
+            name="CRFTransformer",
             random_seed=config[RANDOM_SEED],
             tensorboard_log_dir=config[TENSORBOARD_LOG_DIR],
             tensorboard_log_level=config[TENSORBOARD_LOG_LEVEL],
@@ -898,7 +905,7 @@ class CustomModel(RasaModel):
         self._tf_layers['input_layer'] = InputLayer(dense_dim=self.config[EMBEDDING_DIMENSION], model_dim=self.config[TRANSFORMER_SIZE], reg_lambda=self.config[REGULARIZATION_CONSTANT], drop_rate=self.config[DROP_RATE])
         self._tf_layers['base_layer'] = BaseLayer(model_dim=self.config[TRANSFORMER_SIZE], ffn_dim=self.config[TRANSFORMER_SIZE], num_head=self.config[NUM_HEADS], drop_rate=self.config[DROP_RATE], num_layer=self.config[NUM_TRANSFORMER_LAYERS])
         self._tf_layers['intent_layer'] = IntentLayer(self._num_intents)
-        self._tf_layers['entity_layer'] = EntityLayer(self._num_tags)
+        self._tf_layers['entity_layer'] = CRFEntityLayer(self._num_tags)
         self._tf_layers['intent_acc'] = tf.metrics.Accuracy()
         self._tf_layers["entity_f1"] = tfa.metrics.F1Score(num_classes=self._num_tags - 1, average="micro")  # `0` prediction is not a prediction
 
@@ -971,4 +978,149 @@ class CustomModel(RasaModel):
             out['e_ids'] = preds
         return out
 
+
+class DiceTransformer(RasaModel):
+    def __init__(
+        self,
+        data_signature: Dict[Text, List[FeatureSignature]],
+        label_data: RasaModelData,
+        index_label_id_mapping: Optional[Dict[int, Text]],
+        index_tag_id_mapping: Optional[Dict[int, Text]],
+        config: Dict[Text, Any],
+    ) -> None:
+        
+        super().__init__(
+            name="DiceTransformer",
+            random_seed=config[RANDOM_SEED],
+            tensorboard_log_dir=config[TENSORBOARD_LOG_DIR],
+            tensorboard_log_level=config[TENSORBOARD_LOG_LEVEL],
+        )
+
+        self.config = config
+        self.data_signature = data_signature
+        self._check_data()
+
+        self.predict_data_signature = {feature_name : features for feature_name, features in data_signature.items() if TEXT in feature_name}
+        label_batch = label_data.prepare_batch()
+        self.tf_label_data = self.batch_to_model_data_format(label_batch, label_data.get_signature())
+        self._num_intents = len(index_label_id_mapping) if index_label_id_mapping is not None else 0
+        self._num_tags = len(index_tag_id_mapping) if index_tag_id_mapping is not None else 0
+
+        # tf objects, training
+        self._prepare_layers()
+        self._set_optimizer(tf.keras.optimizers.Adam(config[LEARNING_RATE]))
+        self._create_metrics()
+        self._update_metrics_to_log()
+
+    def _check_data(self) -> None:
+        if TEXT_FEATURES not in self.data_signature:
+            raise InvalidConfigError(
+                f"No text features specified. "
+                f"Cannot train '{self.__class__.__name__}' model."
+            )
+        if self.config[INTENT_CLASSIFICATION]:
+            if LABEL_FEATURES not in self.data_signature:
+                raise InvalidConfigError(
+                    f"No label features specified. "
+                    f"Cannot train '{self.__class__.__name__}' model."
+                )
+
+        if self.config[ENTITY_RECOGNITION] and TAG_IDS not in self.data_signature:
+            raise ValueError(
+                f"No tag ids present. "
+                f"Cannot train '{self.__class__.__name__}' model."
+            )
+
+    def _create_metrics(self) -> None:
+        self.intent_loss = tf.keras.metrics.Mean(name="i_loss")
+        self.entity_loss = tf.keras.metrics.Mean(name="e_loss")
+        self.intent_acc = tf.keras.metrics.Mean(name="i_acc")
+        self.entity_f1 = tf.keras.metrics.Mean(name="e_f1")
+
+    def _update_metrics_to_log(self) -> None:
+        if self.config[INTENT_CLASSIFICATION]:
+            self.metrics_to_log += ["i_loss", "i_acc"]
+        if self.config[ENTITY_RECOGNITION]:
+            self.metrics_to_log += ["e_loss", "e_f1"]
+
+    def _prepare_layers(self):
+        self._tf_layers: Dict[Text : tf.keras.layers.Layer] = {}
+        self._tf_layers['input_layer'] = InputLayer(dense_dim=self.config[EMBEDDING_DIMENSION], model_dim=self.config[TRANSFORMER_SIZE], reg_lambda=self.config[REGULARIZATION_CONSTANT], drop_rate=self.config[DROP_RATE])
+        self._tf_layers['base_layer'] = BaseLayer(model_dim=self.config[TRANSFORMER_SIZE], ffn_dim=self.config[TRANSFORMER_SIZE], num_head=self.config[NUM_HEADS], drop_rate=self.config[DROP_RATE], num_layer=self.config[NUM_TRANSFORMER_LAYERS])
+        self._tf_layers['intent_layer'] = IntentLayer(self._num_intents)
+        self._tf_layers['entity_layer'] = SoftmaxEntityLayer(self._num_tags)
+        self._tf_layers['intent_acc'] = tf.metrics.Accuracy()
+        self._tf_layers["entity_f1"] = tfa.metrics.F1Score(num_classes=self._num_tags - 1, average="micro")  # `0` prediction is not a prediction
+
+    @staticmethod
+    def _get_sequence_lengths(mask: tf.Tensor) -> tf.Tensor:
+        return tf.cast(tf.reduce_sum(mask[:, :, 0], axis=1), tf.int32)
+
+    def batch_loss(self, batch_in: Union[Tuple[tf.Tensor], Tuple[np.ndarray]]) -> tf.Tensor:
+
+        tf_batch_data = self.batch_to_model_data_format(batch_in, self.data_signature)
+        mask = tf_batch_data[TEXT_MASK][0]
+        attn_mask = mask[:, None, None, :, 0]
+        sequence_lengths = self._get_sequence_lengths(mask)
+        
+        inputs = self._tf_layers[f"input_layer"](tf_batch_data[TEXT_FEATURES], mask, sparse_dropout=self.config[SPARSE_INPUT_DROPOUT], training=self._training)
+        x = self._tf_layers[f"base_layer"](inputs, 1 - attn_mask, self._training)
+
+        losses = []
+        if self.config[INTENT_CLASSIFICATION]:
+            preds = self._tf_layers['intent_layer'](x, sequence_lengths, training=self._training)
+            labels = tf_batch_data[LABEL_IDS][0][:,0]
+            loss = tf.keras.losses.sparse_categorical_crossentropy(labels, preds)
+            loss = tf.reduce_mean(loss)
+            acc = tf.keras.metrics.categorical_accuracy(labels, tf.argmax(preds, axis=-1))            
+            
+            losses.append(loss)
+            self.intent_loss.update_state(loss)
+            self.intent_acc.update_state(acc)
+
+        if self.config[ENTITY_RECOGNITION]:
+            labels = tf_batch_data[TAG_IDS][0]
+            labels = tf.cast(labels[:, :, 0], tf.int32)
+            labels_onehot = tf.one_hot(labels, depth=self._num_tags, axis=-1)
+            labels_onehot = tf.cast(labels_onehot, tf.float32)
+            prob, preds = self._tf_layers['entity_layer'](x, labels, sequence_lengths-1, training=self._training)
+            loss = (2 * (1 - prob) * prob * labels_onehot + self.component_config[DICE_GAMMA]) / ((1 - prob) * prob + labels_onehot + self.component_config[DICE_GAMMA])
+            loss = tf.reduce_mean(loss)
+            
+            mask_bool = tf.cast(mask[:, :, 0], tf.bool)
+            # pick only non padding values and flatten sequences
+            labels_flat = tf.boolean_mask(labels, mask_bool)
+            preds_flat = tf.boolean_mask(preds, mask_bool)
+            # set `0` prediction to not a prediction
+            labels_flat_one_hot = tf.one_hot(labels_flat - 1, self._num_tags - 1)
+            preds_flat_one_hot = tf.one_hot(preds_flat - 1, self._num_tags - 1)
+            
+            losses.append(loss)
+            entity_f1 = self._tf_layers['entity_f1'](labels_flat_one_hot, preds_flat_one_hot)
+            self.entity_loss.update_state(loss)
+            self.entity_f1.update_state(entity_f1)
+
+        losses = tf.add_n(losses)
+        return losses
+    
+    def batch_predict(self, batch_in: Union[Tuple[tf.Tensor], Tuple[np.ndarray]]) -> Dict[Text, tf.Tensor]:
+        tf_batch_data = self.batch_to_model_data_format(batch_in, self.predict_data_signature)
+
+        mask = tf_batch_data[TEXT_MASK][0]
+        attn_mask = mask[:, None, None, :, 0]
+        sequence_lengths = self._get_sequence_lengths(mask)
+        
+        inputs = self._tf_layers[f"input_layer"](tf_batch_data[TEXT_FEATURES], mask, sparse_dropout=self.config[SPARSE_INPUT_DROPOUT], training=self._training)
+        x = self._tf_layers[f"base_layer"](inputs, 1 - attn_mask, self._training)
+        
+        out = {}
+        if self.config[INTENT_CLASSIFICATION]:
+            preds = self._tf_layers['intent_layer'](x, sequence_lengths, training=self._training)
+            out['i_scores'] = preds
+        
+        if self.config[ENTITY_RECOGNITION]:
+            labels = None
+            _, preds = self._tf_layers['entity_layer'](x, labels, sequence_lengths-1, training=self._training)
+            out['e_ids'] = preds
+        return out
 # pytype: enable=key-error

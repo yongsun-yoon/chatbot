@@ -36,13 +36,12 @@ logger = logging.getLogger(__name__)
 
 ## custom constant
 MODEL = 'model'
-MODEL_PATH = 'model_path'
-POS_NAME = 'pos'
 MODEL_SIZE = 'model_size'
 WINDOW_SIZE = 'window_size'
 MIN_COUNT = 'min_count'
 EPOCHS = 'epochs'
 SEQ_LEN = 'seq_len'
+BUCKET_SIZE = 'bucket_size'
 
 class WordEmbedFeaturizer(DenseFeaturizer):
     """Featurizer using Word2Vec/FastText model.
@@ -54,20 +53,26 @@ class WordEmbedFeaturizer(DenseFeaturizer):
     def required_components(cls) -> List[Type[Component]]:
         return [MecabTokenizer]
 
-    def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None) -> None:
+    def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None, hash_embedding = None) -> None:
         super(WordEmbedFeaturizer, self).__init__(component_config)
         self.model = model
+        self.hash_embedding = hash_embedding
 
     @classmethod
     def required_packages(cls) -> List[Text]:
         return ["gensim"]
+    
+    @staticmethod
+    def model_class(config):
+        if config[MODEL] == 'word2vec':
+            model_class = Word2Vec
+        elif config[MODEL] == 'fasttext':
+            model_class = FastText
+        return model_class
 
     def get_data_from_examples(self, examples: List[Message], attribute: Text = TEXT) -> List[List[str]]:
         list_of_tokens = [example.get(TOKENS_NAMES[attribute]) for example in examples]
-        list_of_pos = [example.get(POS_NAME) for example in examples]        
-        data = []
-        for i, j in zip(list_of_tokens, list_of_pos):
-            data.append([_i.text + '_' + _j for _i, _j in zip(i, j)])
+        data = [[t.text for t in tokens] for tokens in list_of_tokens]
         return data
 
     def _train(self, training_data: TrainingData, config: Optional[RasaNLUModelConfig] = None, **kwargs: Any) -> None:
@@ -76,14 +81,16 @@ class WordEmbedFeaturizer(DenseFeaturizer):
             non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
         
         data = self.get_data_from_examples(non_empty_examples)
-        model_class = FastText if self.component_config[MODEL] == 'fasttext' else Word2Vec
+        model_class = self.model_class(self.component_config)
         model = model_class(        
                 data,
                 size=self.component_config[MODEL_SIZE], 
                 window=self.component_config[WINDOW_SIZE], 
                 min_count=self.component_config[MIN_COUNT],
                 iter=self.component_config[EPOCHS])
-        return model
+
+        hash_embedding = np.random.rand(self.component_config[BUCKET_SIZE], model.wv.vector_size)
+        return model, hash_embedding
 
     def _combine_encodings(
         self,
@@ -108,13 +115,22 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         return np.array(final_embeddings)
 
     def _compute_features(self, batch_examples: List[Message], attribute: Text = TEXT) -> Tuple[np.ndarray, List[int]]:
-
         batch_data = self.get_data_from_examples(batch_examples, attribute)
-        sequence_encodings = [[self.model.wv[token] if token in self.model.wv.vocab else np.random.rand(self.model.wv.vector_size) for token in sentence] for sentence in batch_data]
-        sequence_encodings = [np.array(i) for i in sequence_encodings]
+        
+        sequence_encodings = []
+        for sentence in batch_data:
+            _sequence_encoding = []
+            for token in sentence:
+                if token in self.model.wv.vocab:
+                    enc = self.model.wv[token]
+                else:
+                    enc = self.hash_embedding[tf.strings.to_hash_bucket(token, self.component_config[BUCKET_SIZE])]
+                _sequence_encoding.append(enc)
+            _sequence_encoding = np.array(_sequence_encoding)
+            sequence_encodings.append(_sequence_encoding)
+
         sentence_encodings = [np.mean(i, axis=0, keepdims=True) for i in sequence_encodings] # mean pooling
         # sentence_encodings = [np.max(i, axis=0, keepdims=True) for i in sequence_encodings] # max pooling
-
         number_of_tokens_in_sentence = [len(sentence) for sentence in batch_data]
         return self._combine_encodings(sentence_encodings, sequence_encodings, number_of_tokens_in_sentence)
     
@@ -126,7 +142,7 @@ class WordEmbedFeaturizer(DenseFeaturizer):
     ) -> None:
 
         print('Dense Featurizer Training...')
-        self.model = self._train(training_data, config, **kwargs)
+        self.model, self.hash_embedding = self._train(training_data, config, **kwargs)
         print('Dense Featurizer Training Completed')
 
         batch_size = 64
@@ -161,7 +177,9 @@ class WordEmbedFeaturizer(DenseFeaturizer):
     
     def persist(self, file_name: Text, model_dir: Text) -> Dict[Text, Any]:
         gensim_model_path = os.path.join(model_dir, f'{file_name}.model')
+        hash_embedding_path = os.path.join(model_dir, f'{file_name}.hash_embedding.pkl')
         self.model.save(gensim_model_path)
+        io_utils.pickle_dump(hash_embedding_path, self.hash_embedding)
         return {"file" : file_name}
 
     @classmethod
@@ -183,10 +201,14 @@ class WordEmbedFeaturizer(DenseFeaturizer):
             return cls(component_config=meta)
 
         file_name = meta['file']
-        model_class = FastText if meta['model'] == 'fasttext' else Word2Vec
         gensim_model_path = os.path.join(model_dir, f"{file_name}.model")
+        hash_embedding_path = os.path.join(model_dir, f'{file_name}.hash_embedding.pkl')
+
+        model_class = cls.model_class(meta)
         model = model_class.load(gensim_model_path)
-        return cls(component_config=meta, model=model)
+        hash_embedding = io_utils.pickle_load(hash_embedding_path)
+
+        return cls(component_config=meta, model=model, hash_embedding=hash_embedding)
 
 
 
@@ -345,9 +367,6 @@ class FlairFeaturizer(DenseFeaturizer):
                     )
 
     def process(self, message: Message, **kwargs: Any) -> None:
-        if not self.model:
-            self.load_model()
-            
         features = self._compute_features([message])[0]
         message.set(
             DENSE_FEATURE_NAMES[TEXT],
