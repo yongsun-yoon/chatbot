@@ -64,7 +64,7 @@ def main():
         post_texts = []
         for i in post_mobile_urls:
             post_texts.append(crawl_text(i))
-            time.sleep(3)
+            time.sleep(5)
 
         titles += post_titles
         urls += post_urls
