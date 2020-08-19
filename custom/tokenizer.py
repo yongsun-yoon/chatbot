@@ -98,6 +98,9 @@ class MecabTokenizer(Tokenizer):
         message.set(TOKENS_NAMES[TEXT], tokens)
         message.set(POS_NAME, pos)
 
+    def persist(self, file_name: Text, model_dir: Text) -> Dict[Text, Any]:
+        return
+
     @staticmethod
     def add_cls_token(tokens: List[Token], pos:List[str], attribute: Text) -> Tuple[List[Token], List[str]]:
         if attribute in [RESPONSE, TEXT] and tokens:
