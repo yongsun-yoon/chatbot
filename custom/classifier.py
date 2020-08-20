@@ -16,6 +16,7 @@ from rasa.utils.tensorflow.constants import (
     BATCH_SIZES,
     EPOCHS,
     RANDOM_SEED,
+    RANKING_LENGTH,
     LEARNING_RATE,
     DROP_RATE,
 )
@@ -24,9 +25,7 @@ from rasa.nlu.constants import (
     INTENT,
     TEXT,
     TOKENS_NAMES,
-    RANKING_LENGTH,
     DENSE_FEATURIZABLE_ATTRIBUTES,
-    DOCS_URL_MIGRATION_GUIDE
 )
 
 import rasa.utils.common as common_utils
@@ -52,6 +51,10 @@ class CustomClassifier(IntentClassifier):
 
     # please make sure to update the docs when changing a default parameter
     defaults = {
+        TRANSFORMER_SIZE: 512,
+        NUM_HEADS: 4,
+        NUM_TRANSFORMER_LAYERS: 2,
+        DROP_RATE: 0.2,
         EPOCHS: 300,
         RANDOM_SEED: None,
         LEARNING_RATE: 0.001,
@@ -71,11 +74,17 @@ class CustomClassifier(IntentClassifier):
 
         self.index_label_id_mapping = index_label_id_mapping
         self.index_tag_id_mapping = index_tag_id_mapping
-        self.label_to_idx = {j:i for i,j in index_label_id_mapping.items()}
-        self._num_intent = len(index_label_id_mapping) if index_label_id_mapping is not None else 0
 
         self.model = model
         self.vocab = vocab
+
+    def prepare_label_dict(self, training_data: TrainingData, attribute: Text):
+        """Create label_id dictionary."""
+        distinct_label_ids = {example.get(attribute) for example in training_data.intent_examples} - {None}
+        self.label_id_index_mapping = {label_id: idx for idx, label_id in enumerate(sorted(distinct_label_ids))} # str -> int
+        self.index_label_id_mapping = {j:i for i,j in self.label_id_index_mapping.items()} # int -> str
+        self._num_intent = len(self.index_label_id_mapping) if self.index_label_id_mapping is not None else 0
+
 
     def get_data_from_examples(self, examples: List[Message], attribute: Text = TEXT, return_vocab: bool = False) -> List[List[str]]:
         list_of_tokens = [example.get(TOKENS_NAMES[attribute])[:-1] for example in examples] # without cls token
@@ -114,19 +123,13 @@ class CustomClassifier(IntentClassifier):
         seq = np.pad(seq, (0, self.component_config[SEQ_LEN] - len(seq)), 'constant')
         return seq
 
-    def _get_input_data(self, data, vocab):
+    def _get_input_data(self, data, segment, vocab):
         char_to_idx = {j:i for i,j in enumerate(vocab)}
         input_data = [[char_to_idx.get(char, char_to_idx['[UNK]']) for char in sentence] for sentence in data]
         input_data = np.array([self._pad_sequence(i) for i in input_data]).astype(np.int32)
-        return input_data
+        segment = np.array([self._pad_sequence(i) for i in segment]).astype(np.int32)
+        return input_data, segment
     
-    def _get_label_data(self, training_data):
-        label_ids = []
-        label_attribute = INTENT
-        for e in training_data:
-            label_ids.append(self.label_to_idx[e.get(label_attribute)])
-        return label_ids
-
     def train(
         self,
         training_data: TrainingData,
@@ -134,25 +137,31 @@ class CustomClassifier(IntentClassifier):
         **kwargs: Any,
     ) -> None:
 
-        non_empty_examples = []
-        for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
-            non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
+        self.prepare_label_dict(training_data, attribute=INTENT)
+        non_empty_examples, labels = [], []
+        for e in training_data.training_examples:
+            if e.get(TEXT):
+                non_empty_examples.append(e)
+                labels.append(self.label_id_index_mapping[e.get(INTENT)])
 
         data, segment, self.vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
-        input_data = self._get_input_data(data, self.vocab)
-        labels = self._get_label_data(training_data)
+        input_data, segment = self._get_input_data(data, segment, self.vocab)
+        labels = np.array(labels).astype(np.int32)
+
+        print(input_data.shape)
+        print(segment.shape)
 
         self.model = CharNetwork(
             num_intent = self._num_intent,
             vocab_size = len(self.vocab),
-            model_dim=self.config[TRANSFORMER_SIZE], 
-            ffn_dim=self.config[TRANSFORMER_SIZE], 
-            num_head=self.config[NUM_HEADS], 
-            drop_rate=self.config[DROP_RATE], 
-            num_layer=self.config[NUM_TRANSFORMER_LAYERS])
+            model_dim=self.component_config[TRANSFORMER_SIZE], 
+            ffn_dim=self.component_config[TRANSFORMER_SIZE], 
+            num_head=self.component_config[NUM_HEADS], 
+            drop_rate=self.component_config[DROP_RATE], 
+            num_layer=self.component_config[NUM_TRANSFORMER_LAYERS])
         
         self.model.compile(
-            optimizer = tf.keras.optimizers.Adam(self.config[LEARNING_RATE]),
+            optimizer = tf.keras.optimizers.Adam(self.component_config[LEARNING_RATE]),
             loss = 'sparse_categorical_crossentropy'
         )
         

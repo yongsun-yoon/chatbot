@@ -202,7 +202,7 @@ class CharNetwork(tf.keras.Model):
         self.char_embedding = tf.keras.layers.Embedding(vocab_size, model_dim)
         self.seg_embedding = tf.keras.layers.Embedding(100, model_dim)
         self.base_layer = BaseLayer(model_dim, ffn_dim, num_head, drop_rate, num_layer)
-        self.pooling = tf.keras.layers.AveragePooling1D()
+        self.pooling = tf.keras.layers.GlobalAveragePooling1D()()
         self.dense = tf.keras.layers.Dense(num_intent, activation='softmax')
 
     def call(self, x, training=False):
