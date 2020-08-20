@@ -16,6 +16,7 @@ pipeline:
     model_size: 64
     window_size: 7
     min_count: 1
+    bucket_size: 100
     epochs: 10
   - name: custom.extractor.CustomExtractor
     model: "CRF"
