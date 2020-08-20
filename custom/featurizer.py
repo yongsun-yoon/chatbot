@@ -4,7 +4,7 @@ from tqdm import tqdm
 from pathlib import Path
 
 from rasa.constants import DOCS_URL_COMPONENTS
-from rasa.nlu.tokenizers.tokenizer import Token
+from rasa.nlu.tokenizers.tokenizer import Token, Tokenizer
 from rasa.nlu.components import Component
 from rasa.nlu.featurizers.featurizer import DenseFeaturizer
 from rasa.nlu.tokenizers.convert_tokenizer import ConveRTTokenizer
@@ -51,7 +51,7 @@ class WordEmbedFeaturizer(DenseFeaturizer):
 
     @classmethod
     def required_components(cls) -> List[Type[Component]]:
-        return [MecabTokenizer]
+        return [Tokenizer]
 
     def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None, hash_embedding = None) -> None:
         super(WordEmbedFeaturizer, self).__init__(component_config)
@@ -220,7 +220,7 @@ class FlairFeaturizer(DenseFeaturizer):
 
     @classmethod
     def required_components(cls) -> List[Type[Component]]:
-        return [MecabTokenizer]
+        return [Tokenizer]
 
     def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None, vocab = None) -> None:
         super(FlairFeaturizer, self).__init__(component_config)
