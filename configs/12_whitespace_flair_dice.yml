@@ -14,7 +14,7 @@ pipeline:
     epochs: 100
     model_size: 64
     seq_len: 200
-  - name: custom.classifier.CustomClassifier
+  - name: custom.extractor.CustomExtractor
     model: "Dice"
     epochs: 100
   - name: EntitySynonymMapper

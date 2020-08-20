@@ -98,7 +98,7 @@ MODEL = 'model'
 DICE_GAMMA = 'dice_gamma'
 
 
-class CustomClassifier(IntentClassifier, EntityExtractor):
+class CustomExtractor(IntentClassifier, EntityExtractor):
     """DIET (Dual Intent and Entity Transformer) is a multi-task architecture for
     intent classification and entity recognition.
 
