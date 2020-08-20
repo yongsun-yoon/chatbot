@@ -205,8 +205,8 @@ class CustomExtractor(IntentClassifier, EntityExtractor):
     def model_class(config) -> Type[RasaModel]:
         if config[MODEL] == 'CRF':
             model_class = CRFTransformer
-        elif config[MODEL] == 'Dice':
-            model_class = DiceTransformer
+        elif config[MODEL] == 'Softmax':
+            model_class = SoftmaxTransformer
         return model_class
 
     # training data helpers:
@@ -979,7 +979,7 @@ class CRFTransformer(RasaModel):
         return out
 
 
-class DiceTransformer(RasaModel):
+class SoftmaxTransformer(RasaModel):
     def __init__(
         self,
         data_signature: Dict[Text, List[FeatureSignature]],
@@ -1081,15 +1081,19 @@ class DiceTransformer(RasaModel):
         if self.config[ENTITY_RECOGNITION]:
             labels = tf_batch_data[TAG_IDS][0]
             labels = tf.cast(labels[:, :, 0], tf.int32)
-            labels_onehot = tf.one_hot(labels, depth=self._num_tags, axis=-1)
-            labels_onehot = tf.cast(labels_onehot, tf.float32)
             prob, preds = self._tf_layers['entity_layer'](x, sequence_lengths-1, training=self._training)
             
-            nom = 2 * prob * labels_onehot + self.config[DICE_GAMMA] # 분자
-            denom = (prob ** 2) + (labels_onehot ** 2) + self.config[DICE_GAMMA] # 분모
-            loss = 1 - (nom / denom)
-            loss = 1000 * tf.reduce_mean(loss)
+
+            # labels_onehot = tf.one_hot(labels, depth=self._num_tags, axis=-1)
+            # labels_onehot = tf.cast(labels_onehot, tf.float32)
+            # nom = 2 * prob * labels_onehot + self.config[DICE_GAMMA] # 분자
+            # denom = (prob ** 2) + (labels_onehot ** 2) + self.config[DICE_GAMMA] # 분모
+            # loss = 1 - (nom / denom)
+            # loss = 1000 * tf.reduce_mean(loss)
             
+            loss = tf.keras.losses.sparse_categorical_crossentropy(labels, prob)
+            loss = tf.reduce_mean(loss)
+
             mask_bool = tf.cast(mask[:, :, 0], tf.bool)
             # pick only non padding values and flatten sequences
             labels_flat = tf.boolean_mask(labels, mask_bool)

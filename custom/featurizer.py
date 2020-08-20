@@ -244,13 +244,11 @@ class FlairFeaturizer(DenseFeaturizer):
                 sent.append('[SEP]')
                 if return_vocab:
                     vocab += list(token_text)
-
-            sent.append('[EOS]')
             data.append(sent)
 
         if return_vocab:
             vocab = list(set(vocab))
-            vocab = ['[PAD]', '[SEP]', '[UNK]', '[BOS]', '[EOS]'] + vocab
+            vocab = ['[PAD]', '[SEP]', '[UNK]', '[BOS]'] + vocab
             return data, vocab
         else:
             return data

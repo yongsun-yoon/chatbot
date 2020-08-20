@@ -2,7 +2,8 @@
 # https://rasa.com/docs/rasa/nlu/components/
 language: kr
 pipeline:
-  - name: WhitespaceTokenizer
+  - name: custom.tokenizer.MecabTokenizer
+    mecab_dir: '/tmp/mecab-ko-dic-2.1.1-20180720'
   - name: RegexFeaturizer
   - name: LexicalSyntacticFeaturizer
   - name: CountVectorsFeaturizer
@@ -17,7 +18,7 @@ pipeline:
     min_count: 1
     epochs: 10
   - name: custom.extractor.CustomExtractor
-    model: "CRF"
+    model: "Softmax"
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector
