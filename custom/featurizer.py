@@ -238,10 +238,16 @@ class FlairFeaturizer(DenseFeaturizer):
         for sentence in list_of_tokens:
             sent = []
             sent.append('[BOS]')
+            add_idx = 1
+
             for token in sentence:
                 token_text = token.text
                 sent += list(token_text)
+                token.char_start = token.start + add_idx
+                token.char_end = token.end + add_idx
+                
                 sent.append('[SEP]')
+                add_idx += 1
                 if return_vocab:
                     vocab += list(token_text)
             data.append(sent)
@@ -321,11 +327,11 @@ class FlairFeaturizer(DenseFeaturizer):
         forward, backward = self.get_representation(batch_data)
 
         list_of_tokens = [example.get(TOKENS_NAMES[attribute])[:-1] for example in batch_examples] # without cls token
-        start_idx = [[t.start for t in tokens] for tokens in list_of_tokens]
-        end_idx = [[t.end for t in tokens] for tokens in list_of_tokens]
+        start_idx = [[t.char_start - 1 for t in tokens] for tokens in list_of_tokens]
+        end_idx = [[t.char_end + 1 for t in tokens] for tokens in list_of_tokens]
 
-        forward_encodings = [tf.gather(r, i+1) for i, r in zip(end_idx, forward)]
-        backward_encodings = [tf.gather(r, i-1) for i, r in zip(start_idx, backward)]
+        forward_encodings = [tf.gather(r, i) for i, r in zip(end_idx, forward)]
+        backward_encodings = [tf.gather(r, i) for i, r in zip(start_idx, backward)]
         sequence_encodings = [tf.concat([f, b], axis=-1) for f, b in zip(forward_encodings, backward_encodings)]
 
         sequence_encodings = [np.array(i) for i in sequence_encodings]
