@@ -13,9 +13,6 @@ pipeline:
     max_ngram: 4
   - name: custom.featurizer.FlairFeaturizer
     external_data: 'data/카페.csv'
-    epochs: 100
-    model_size: 64
-    seq_len: 200
   - name: custom.extractor.CustomExtractor
     model: "CRF"
     epochs: 100

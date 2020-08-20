@@ -59,7 +59,12 @@ class WordEmbedFeaturizer(DenseFeaturizer):
     """
 
     defaults = {
-        EXTERNAL_DATA : None
+        EXTERNAL_DATA : None,
+        MODEL_SIZE : 64,
+        WINDOW_SIZE : 7,
+        MIN_COUNT : 1,
+        BUCKET_SIZE : 100,
+        EPOCHS : 10
     }
 
     def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None, hash_embedding = None) -> None:
@@ -235,7 +240,10 @@ class FlairFeaturizer(DenseFeaturizer):
     for dense featurizable attributes of each message object.
     """
     defaults = {
-        EXTERNAL_DATA : None
+        EXTERNAL_DATA : None,
+        MODEL_SIZE : 64,
+        SEQ_LEN : 100,
+        EPOCHS : 100,
     }
 
 
@@ -251,6 +259,29 @@ class FlairFeaturizer(DenseFeaturizer):
     @classmethod
     def required_packages(cls) -> List[Text]:
         return ["tensorflow"]
+
+    def get_data_from_external_data(self, external_data, return_vocab=False):
+        data, vocab = [], []
+        for sentence in external_data:
+            sent = []
+            sent.append('[BOS]')
+
+            for token in sentence:
+                sent += list(token)
+                sent.append('[SEP]')
+
+                if return_vocab:
+                    vocab += list(token)
+            
+            data.append(sent)
+
+        if return_vocab:
+            vocab = list(set(vocab))
+            vocab = ['[PAD]', '[SEP]', '[UNK]', '[BOS]'] + vocab
+            return data, vocab
+        else:
+            return data
+
 
     def get_data_from_examples(self, examples: List[Message], attribute: Text = TEXT, return_vocab: bool = False) -> List[List[str]]:
         list_of_tokens = [example.get(TOKENS_NAMES[attribute])[:-1] for example in examples] # without cls token
@@ -299,7 +330,7 @@ class FlairFeaturizer(DenseFeaturizer):
     def _train(self, training_data: TrainingData, config: Optional[RasaNLUModelConfig] = None, **kwargs: Any) -> None:
         if self.component_config[EXTERNAL_DATA]:
             data = load_data(self.component_config[EXTERNAL_DATA])
-            data, vocab = self.get_data_from_examples(data, return_vocab=True)
+            data, vocab = self.get_data_from_external_data(data, return_vocab=True)
         else:
             non_empty_examples = []
             for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
@@ -346,7 +377,7 @@ class FlairFeaturizer(DenseFeaturizer):
         return np.array(final_embeddings)
 
     def _compute_features(self, batch_examples: List[Message], attribute: Text = TEXT) -> Tuple[np.ndarray, List[int]]:
-
+        
         batch_data = self.get_data_from_examples(batch_examples, attribute)
         batch_data, _, _ = self._preprocess_data(batch_data, self.vocab)
         forward, backward = self.get_representation(batch_data)

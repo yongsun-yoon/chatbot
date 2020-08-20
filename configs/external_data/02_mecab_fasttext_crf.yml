@@ -14,11 +14,6 @@ pipeline:
   - name: custom.featurizer.WordEmbedFeaturizer
     model: 'fasttext'
     external_data: 'data/카페.csv'
-    model_size: 64
-    window_size: 7
-    min_count: 1
-    bucket_size: 100
-    epochs: 10
   - name: custom.extractor.CustomExtractor
     model: "CRF"
     epochs: 100
