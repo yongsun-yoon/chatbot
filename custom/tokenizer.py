@@ -39,10 +39,9 @@ class MecabTokenizer(Tokenizer):
     not_supported_language_list = []
 
     def __init__(self, component_config: Dict[Text, Any] = None) -> None:
-        """Construct a new tokenizer using the WhitespaceTokenizer framework."""
+        """Construct a new tokenizer using the MecabTokenizer framework."""
 
         super().__init__(component_config)
-
         self.mecab = Mecab(self.component_config[MECAB_DIR])
 
         if "case_sensitive" in self.component_config:
@@ -55,25 +54,15 @@ class MecabTokenizer(Tokenizer):
     def tokenize(self, message: Message, attribute: Text) -> Tuple[List[Token], List[str]]:
         text = message.get(attribute)
 
-        # we need to use regex instead of re, because of
-        # https://stackoverflow.com/questions/12746458/python-unicode-regular-expression-matching-failing-with-some-unicode-characters
-
-        # remove 'not a word character' if
-        text = re.sub('[^0-9ㄱ-힣]', ' ', text) # remove special words
-        results = self.mecab.pos(text)
+        only_text = re.sub('[^0-9ㄱ-힣]', ' ', text) # remove special words
+        results = self.mecab.pos(only_text)
         if len(results) > 0:
             words, pos = zip(*results)
         else:
-            words, pos = None, None
-
-        # if we removed everything like smiles `:)`, use the whole text as 1 token
-        if not words:
-            words = [text]
-            pos = ['NNG']
+            words, pos = [text], ['NNG'] # if we removed everything like smiles `:)`, use the whole text as 1 token
 
         tokens = self._convert_words_to_tokens(words, text)
-        tokens = list(tokens)
-        pos = list(pos)
+        tokens, pos = list(tokens), list(pos)
         return tokens, pos
 
     def train(self, training_data: TrainingData, config: Optional[RasaNLUModelConfig] = None, **kwargs: Any) -> None:

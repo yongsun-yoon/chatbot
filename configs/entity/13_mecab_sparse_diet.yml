@@ -12,7 +12,6 @@ pipeline:
     min_ngram: 1
     max_ngram: 4
   - name: DIETClassifier
-    intent_classification: False
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector

@@ -17,7 +17,6 @@ pipeline:
     seq_len: 200
   - name: custom.extractor.CustomExtractor
     model: "Dice"
-    intent_classification: False
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector
