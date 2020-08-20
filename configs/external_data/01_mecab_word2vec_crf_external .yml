@@ -13,7 +13,8 @@ pipeline:
     max_ngram: 4
   - name: custom.featurizer.WordEmbedFeaturizer
     model: 'word2vec'
-    external_data: 'data/카페.csv'
+    use_data: 'external'
+    external_data_path: 'data/카페.csv'
   - name: custom.extractor.CustomExtractor
     model: "CRF"
     epochs: 100

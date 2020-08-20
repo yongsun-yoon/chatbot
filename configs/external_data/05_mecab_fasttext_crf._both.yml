@@ -11,8 +11,10 @@ pipeline:
     analyzer: "char_wb"
     min_ngram: 1
     max_ngram: 4
-  - name: custom.featurizer.FlairFeaturizer
-    external_data: 'data/카페.csv'
+  - name: custom.featurizer.WordEmbedFeaturizer
+    model: 'fasttext'
+    use_data: 'both'
+    external_data_path: 'data/카페.csv'
   - name: custom.extractor.CustomExtractor
     model: "CRF"
     epochs: 100

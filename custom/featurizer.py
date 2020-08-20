@@ -43,7 +43,8 @@ MIN_COUNT = 'min_count'
 EPOCHS = 'epochs'
 SEQ_LEN = 'seq_len'
 BUCKET_SIZE = 'bucket_size'
-EXTERNAL_DATA = 'external_data'
+USE_DATA : 'use_data'
+EXTERNAL_DATA_PATH = 'external_data_path'
 
 def load_data(data_path):
     data_path = os.path.join(os.path.dirname(__file__), '..', data_path)
@@ -59,7 +60,8 @@ class WordEmbedFeaturizer(DenseFeaturizer):
     """
 
     defaults = {
-        EXTERNAL_DATA : None,
+        USE_DATA : 'internal', # internal / external / both
+        EXTERNAL_DATA_PATH : None,
         MODEL_SIZE : 64,
         WINDOW_SIZE : 7,
         MIN_COUNT : 1,
@@ -95,13 +97,22 @@ class WordEmbedFeaturizer(DenseFeaturizer):
 
     def _train(self, training_data: TrainingData, config: Optional[RasaNLUModelConfig] = None, **kwargs: Any) -> None:
 
-        if self.component_config[EXTERNAL_DATA]:
-            data = load_data(self.component_config[EXTERNAL_DATA])
-        else:
+        if self.component_config[USE_DATA] == 'internal':
             non_empty_examples = []
             for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
                 non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
             data = self.get_data_from_examples(non_empty_examples)
+        
+        elif self.component_config[USE_DATA] == 'external':
+            data = load_data(self.component_config[EXTERNAL_DATA_PATH])
+
+        elif self.component_config[USE_DATA] == 'both':
+            non_empty_examples = []
+            for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
+                non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
+            internal_data = self.get_data_from_examples(non_empty_examples)
+            external_data = load_data(self.component_config[EXTERNAL_DATA_PATH])
+            data = internal_data + external_data
 
         model_class = self.model_class(self.component_config)
         model = model_class(        
@@ -240,7 +251,8 @@ class FlairFeaturizer(DenseFeaturizer):
     for dense featurizable attributes of each message object.
     """
     defaults = {
-        EXTERNAL_DATA : None,
+        USE_DATA : 'internal',
+        EXTERNAL_DATA_PATH : None,
         MODEL_SIZE : 64,
         SEQ_LEN : 100,
         EPOCHS : 100,
@@ -328,14 +340,28 @@ class FlairFeaturizer(DenseFeaturizer):
         return input_data, forward_data, backward_data
 
     def _train(self, training_data: TrainingData, config: Optional[RasaNLUModelConfig] = None, **kwargs: Any) -> None:
-        if self.component_config[EXTERNAL_DATA]:
-            data = load_data(self.component_config[EXTERNAL_DATA])
-            data, vocab = self.get_data_from_external_data(data, return_vocab=True)
-        else:
+        
+        if self.component_config[USE_DATA] == 'internal':
             non_empty_examples = []
             for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
                 non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
             data, vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
+        
+        elif self.component_config[USE_DATA] == 'external':
+            data = load_data(self.component_config[EXTERNAL_DATA_PATH])
+            data, vocab = self.get_data_from_external_data(data, return_vocab=True)
+
+        elif self.component_config[USE_DATA] == 'both':
+            non_empty_examples = []
+            for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
+                non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
+            internal_data, internal_vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
+        
+            external_data = load_data(self.component_config[EXTERNAL_DATA_PATH])
+            external_data, external_vocab = self.get_data_from_external_data(external_data, return_vocab=True)
+
+            data = internal_data + external_data
+            vocab = list(set(internal_vocab + external_vocab))
         
         input_data, forward_data, backward_data = self._preprocess_data(data, vocab)
 
