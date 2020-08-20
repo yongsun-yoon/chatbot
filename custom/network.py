@@ -185,3 +185,34 @@ class FlairEmbedding(tf.keras.Model):
         backward = self.backward_lstm(x)
         backward_outputs = self.backward_outputs(backward)
         return forward_outputs, backward_outputs
+
+class MaskLayer(tf.keras.layers.Layer):
+    def __init__(self):
+        super(MaskLayer, self).__init__()
+
+    def call(self, x):
+        padding_mask = tf.cast(tf.math.equal(x, 0), tf.float32)[:, None, None, :]
+        look_ahead_mask = 1 - tf.linalg.band_part(tf.ones((x.shape[-1], x.shape[-1])), -1, 0)
+        return padding_mask, look_ahead_mask
+
+class CharNetwork(tf.keras.Model):
+    def __init__(self, num_intent, vocab_size, model_dim, ffn_dim, num_head, drop_rate, num_layer):
+        super(CharNetwork, self).__init__()
+        self.mask_layer = MaskLayer()
+        self.char_embedding = tf.keras.layers.Embedding(vocab_size, model_dim)
+        self.seg_embedding = tf.keras.layers.Embedding(100, model_dim)
+        self.base_layer = BaseLayer(model_dim, ffn_dim, num_head, drop_rate, num_layer)
+        self.pooling = tf.keras.layers.AveragePooling1D()
+        self.dense = tf.keras.layers.Dense(num_intent, activation='softmax')
+
+    def call(self, x, training=False):
+        char, seg = x
+        pad_mask, _ = self.mask_layer(char)
+        char = self.char_embedding(char)
+        seg = self.seg_embedding(seg)
+        x = char + seg
+
+        x = self.base_layer(x, pad_mask, training)
+        x = self.pooling(x)
+        x = self.dense(x)
+        return x

@@ -43,7 +43,7 @@ MIN_COUNT = 'min_count'
 EPOCHS = 'epochs'
 SEQ_LEN = 'seq_len'
 BUCKET_SIZE = 'bucket_size'
-USE_DATA : 'use_data'
+USE_DATA = 'use_data'
 EXTERNAL_DATA_PATH = 'external_data_path'
 
 def load_data(data_path):
