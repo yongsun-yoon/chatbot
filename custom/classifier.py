@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 SEQ_LEN = 'seq_len'
 
-class CharClassifier(IntentClassifier):
+class CustomClassifier(IntentClassifier):
     """Character level Transformer used for intent classification.
     """
 
