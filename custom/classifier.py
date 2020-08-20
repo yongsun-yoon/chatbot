@@ -59,6 +59,7 @@ class CustomClassifier(IntentClassifier):
         RANDOM_SEED: None,
         LEARNING_RATE: 0.001,
         SEQ_LEN : 100,
+        RANKING_LENGTH: 20,
     }
 
     def __init__(
@@ -67,7 +68,7 @@ class CustomClassifier(IntentClassifier):
         index_label_id_mapping: Optional[Dict[int, Text]] = None,
         index_tag_id_mapping: Optional[Dict[int, Text]] = None,
         model = None,
-        vocab = None,
+        char_to_idx = None,
     ) -> None:
 
         super().__init__(component_config)
@@ -76,7 +77,7 @@ class CustomClassifier(IntentClassifier):
         self.index_tag_id_mapping = index_tag_id_mapping
 
         self.model = model
-        self.vocab = vocab
+        self.char_to_idx = char_to_idx
 
     def prepare_label_dict(self, training_data: TrainingData, attribute: Text):
         """Create label_id dictionary."""
@@ -123,9 +124,8 @@ class CustomClassifier(IntentClassifier):
         seq = np.pad(seq, (0, self.component_config[SEQ_LEN] - len(seq)), 'constant')
         return seq
 
-    def _get_input_data(self, data, segment, vocab):
-        char_to_idx = {j:i for i,j in enumerate(vocab)}
-        input_data = [[char_to_idx.get(char, char_to_idx['[UNK]']) for char in sentence] for sentence in data]
+    def _get_input_data(self, data, segment):
+        input_data = [[self.char_to_idx.get(char, self.char_to_idx['[UNK]']) for char in sentence] for sentence in data]
         input_data = np.array([self._pad_sequence(i) for i in input_data]).astype(np.int32)
         segment = np.array([self._pad_sequence(i) for i in segment]).astype(np.int32)
         return input_data, segment
@@ -144,13 +144,14 @@ class CustomClassifier(IntentClassifier):
                 non_empty_examples.append(e)
                 labels.append(self.label_id_index_mapping[e.get(INTENT)])
 
-        data, segment, self.vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
-        input_data, segment = self._get_input_data(data, segment, self.vocab)
+        data, segment, vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
+        self.char_to_idx = {j:i for i,j in enumerate(vocab)}
+        input_data, segment = self._get_input_data(data, segment)
         labels = np.array(labels).astype(np.int32)
 
         self.model = CharNetwork(
             num_intent = self._num_intent,
-            vocab_size = len(self.vocab),
+            vocab_size = len(vocab),
             model_dim=self.component_config[TRANSFORMER_SIZE], 
             ffn_dim=self.component_config[TRANSFORMER_SIZE], 
             num_head=self.component_config[NUM_HEADS], 
@@ -178,7 +179,7 @@ class CustomClassifier(IntentClassifier):
         data, segment = [], []
         seg_idx = 1
 
-        data.append(['[BOS]'])
+        data.append('[BOS]')
         segment.append(seg_idx)
         seg_idx += 1
 
@@ -189,8 +190,11 @@ class CustomClassifier(IntentClassifier):
             segment += [seg_idx for _ in range(len(token_text) + 1)]
             seg_idx += 1
         
-        data = np.array(data)[None, :]
-        return self.model.predict(data)
+        data = [self.char_to_idx.get(char, self.char_to_idx['[UNK]']) for char in data]
+        data = self._pad_sequence(data)[None,:].astype(np.int32)
+        segment = self._pad_sequence(segment)[None,:].astype(np.int32)
+
+        return self.model.predict([data, segment])
 
     def _predict_label(
         self, prob=None
@@ -203,7 +207,7 @@ class CustomClassifier(IntentClassifier):
         if prob is None:
             return label, label_ranking
 
-        message_score = prob.numpy().flatten()
+        message_score = prob.flatten()
         label_ids = message_score.argsort()[::-1]
 
         message_score = train_utils.normalize(message_score, self.component_config[RANKING_LENGTH])
@@ -250,7 +254,7 @@ class CustomClassifier(IntentClassifier):
         os.makedirs(tf_model_path)
         tf.keras.models.save_model(self.model, tf_model_path)
 
-        io_utils.pickle_dump(os.path.join(model_dir, f'{file_name}.vocab.pkl'), self.vocab)
+        io_utils.pickle_dump(os.path.join(model_dir, f'{file_name}.char_to_idx.pkl'), self.char_to_idx)
         io_utils.pickle_dump(os.path.join(model_dir, f'{file_name}.index_label_id_mapping.pkl'), self.index_label_id_mapping)
         io_utils.pickle_dump(os.path.join(model_dir, f'{file_name}.index_tag_id_mapping .pkl'), self.index_tag_id_mapping )
         return {"file" : file_name}
@@ -279,7 +283,7 @@ class CustomClassifier(IntentClassifier):
 
         
 
-        vocab = io_utils.pickle_load(os.path.join(model_dir, f'{file_name}.vocab.pkl'))
+        char_to_idx = io_utils.pickle_load(os.path.join(model_dir, f'{file_name}.char_to_idx.pkl'))
         index_label_id_mapping = io_utils.pickle_load(os.path.join(model_dir, f'{file_name}.index_label_id_mapping.pkl'))
         index_tag_id_mapping = io_utils.pickle_load(os.path.join(model_dir, f'{file_name}.index_tag_id_mapping .pkl'))
 
@@ -288,4 +292,4 @@ class CustomClassifier(IntentClassifier):
             index_label_id_mapping = index_label_id_mapping,
             index_tag_id_mapping = index_tag_id_mapping,
             model=model, 
-            vocab=vocab)
+            char_to_idx=char_to_idx)

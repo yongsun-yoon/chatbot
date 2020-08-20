@@ -5,6 +5,10 @@ from rasa.utils.tensorflow import layers
 
 from typing import Any, Dict, List, Optional, Text, Tuple, Union, Type
 
+def gelu(x):
+    cdf = 0.5 * (1.0 + tf.math.erf(x / tf.sqrt(2.0)))
+    return x * cdf
+
 class InputLayer(tf.keras.layers.Layer):
     def __init__(self, dense_dim: List[int], model_dim: int, reg_lambda:float, drop_rate:float):
         super(InputLayer, self).__init__()
@@ -86,7 +90,7 @@ class FeedForwardNetwork(tf.keras.layers.Layer):
 
     def call(self, x):
         x = self.dense1(x)
-        x = tfa.activations.gelu(x)
+        x = gelu(x)
         x = self.dense2(x)
         return x
 
@@ -202,7 +206,7 @@ class CharNetwork(tf.keras.Model):
         self.char_embedding = tf.keras.layers.Embedding(vocab_size, model_dim)
         self.seg_embedding = tf.keras.layers.Embedding(100, model_dim)
         self.base_layer = BaseLayer(model_dim, ffn_dim, num_head, drop_rate, num_layer)
-        self.pooling = tf.keras.layers.GlobalAveragePooling1D()()
+        self.pooling = tf.keras.layers.GlobalAveragePooling1D()
         self.dense = tf.keras.layers.Dense(num_intent, activation='softmax')
 
     def call(self, x, training=False):
