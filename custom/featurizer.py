@@ -234,15 +234,19 @@ class FlairFeaturizer(DenseFeaturizer):
     Loads the model and computes sentence and sequence level feature representations 
     for dense featurizable attributes of each message object.
     """
+    defaults = {
+        EXTERNAL_DATA : None
+    }
 
-    @classmethod
-    def required_components(cls) -> List[Type[Component]]:
-        return [Tokenizer]
 
     def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None, vocab = None) -> None:
         super(FlairFeaturizer, self).__init__(component_config)
         self.model = model
         self.vocab = vocab
+
+    @classmethod
+    def required_components(cls) -> List[Type[Component]]:
+        return [Tokenizer]
 
     @classmethod
     def required_packages(cls) -> List[Text]:
