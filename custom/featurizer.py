@@ -18,6 +18,7 @@ from rasa.nlu.constants import (
     DENSE_FEATURIZABLE_ATTRIBUTES,
 )
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 
 import rasa.utils.io as io_utils
@@ -42,6 +43,14 @@ MIN_COUNT = 'min_count'
 EPOCHS = 'epochs'
 SEQ_LEN = 'seq_len'
 BUCKET_SIZE = 'bucket_size'
+EXTERNAL_DATA = 'external_data'
+
+def load_data(data_path):
+    data_path = os.path.join(os.path.dirname(__file__), '..', data_path)
+    data = pd.read_csv(data_path)
+    data['token'] = data['token'].apply(lambda x : '/'.split(x))
+    data = data['token'].to_list()
+    return data
 
 class WordEmbedFeaturizer(DenseFeaturizer):
     """Featurizer using Word2Vec/FastText model.
@@ -49,14 +58,18 @@ class WordEmbedFeaturizer(DenseFeaturizer):
     for dense featurizable attributes of each message object.
     """
 
-    @classmethod
-    def required_components(cls) -> List[Type[Component]]:
-        return [Tokenizer]
+    defaults = {
+        EXTERNAL_DATA : None
+    }
 
     def __init__(self, component_config: Optional[Dict[Text, Any]] = None, model = None, hash_embedding = None) -> None:
         super(WordEmbedFeaturizer, self).__init__(component_config)
         self.model = model
         self.hash_embedding = hash_embedding
+
+    @classmethod
+    def required_components(cls) -> List[Type[Component]]:
+        return [Tokenizer]
 
     @classmethod
     def required_packages(cls) -> List[Text]:
@@ -76,11 +89,15 @@ class WordEmbedFeaturizer(DenseFeaturizer):
         return data
 
     def _train(self, training_data: TrainingData, config: Optional[RasaNLUModelConfig] = None, **kwargs: Any) -> None:
-        non_empty_examples = []
-        for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
-            non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
-        
-        data = self.get_data_from_examples(non_empty_examples)
+
+        if self.component_config[EXTERNAL_DATA]:
+            data = load_data(self.component_config[EXTERNAL_DATA])
+        else:
+            non_empty_examples = []
+            for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
+                non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
+            data = self.get_data_from_examples(non_empty_examples)
+
         model_class = self.model_class(self.component_config)
         model = model_class(        
                 data,
@@ -276,11 +293,15 @@ class FlairFeaturizer(DenseFeaturizer):
         return input_data, forward_data, backward_data
 
     def _train(self, training_data: TrainingData, config: Optional[RasaNLUModelConfig] = None, **kwargs: Any) -> None:
-        non_empty_examples = []
-        for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
-            non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
+        if self.component_config[EXTERNAL_DATA]:
+            data = load_data(self.component_config[EXTERNAL_DATA])
+            data, vocab = self.get_data_from_examples(data, return_vocab=True)
+        else:
+            non_empty_examples = []
+            for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
+                non_empty_examples += list(filter(lambda x: x.get(attribute), training_data.training_examples))
+            data, vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
         
-        data, vocab = self.get_data_from_examples(non_empty_examples, return_vocab=True)
         input_data, forward_data, backward_data = self._preprocess_data(data, vocab)
 
         model = FlairEmbedding(len(vocab), self.component_config[MODEL_SIZE])
