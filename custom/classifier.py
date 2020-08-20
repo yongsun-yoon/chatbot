@@ -1085,12 +1085,15 @@ class DiceTransformer(RasaModel):
             labels_onehot = tf.cast(labels_onehot, tf.float32)
             prob, preds = self._tf_layers['entity_layer'](x, sequence_lengths-1, training=self._training)
             
-            nom = (1 - prob) * prob * labels_onehot + self.config[DICE_GAMMA] # 분자
-            denom = (1 - prob) * prob + labels_onehot + self.config[DICE_GAMMA] # 분모
+            nom = 2 * prob * labels_onehot + self.config[DICE_GAMMA] # 분자
+            denom = (prob ** 2) + (labels_onehot ** 2) + self.config[DICE_GAMMA] # 분모
             loss = 1 - (nom / denom)
-            # loss = tf.keras.losses.sparse_categorical_crossentropy(labels, prob)
+            loss = 1000 * tf.reduce_mean(loss)
             loss = tf.reduce_mean(loss)
+            loss *= 1000
             
+            # loss = tf.keras.losses.sparse_categorical_crossentropy(labels, prob)
+
             mask_bool = tf.cast(mask[:, :, 0], tf.bool)
             # pick only non padding values and flatten sequences
             labels_flat = tf.boolean_mask(labels, mask_bool)
