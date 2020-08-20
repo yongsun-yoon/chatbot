@@ -1083,8 +1083,12 @@ class DiceTransformer(RasaModel):
             labels = tf.cast(labels[:, :, 0], tf.int32)
             labels_onehot = tf.one_hot(labels, depth=self._num_tags, axis=-1)
             labels_onehot = tf.cast(labels_onehot, tf.float32)
-            prob, preds = self._tf_layers['entity_layer'](x, labels, sequence_lengths-1, training=self._training)
-            loss = (2 * (1 - prob) * prob * labels_onehot + self.component_config[DICE_GAMMA]) / ((1 - prob) * prob + labels_onehot + self.component_config[DICE_GAMMA])
+            prob, preds = self._tf_layers['entity_layer'](x, sequence_lengths-1, training=self._training)
+            
+            # loss = (2 * (1 - prob) * prob * labels_onehot + self.config[DICE_GAMMA]) / ((1 - prob) * prob + labels_onehot + self.config[DICE_GAMMA])
+            dsc = (2 * prob * labels_onehot + self.config[DICE_GAMMA]) / (prob + labels_onehot + self.config[DICE_GAMMA])
+            loss = tf.reduce_sum(1 - dsc, axis=-1)
+            # loss = tf.keras.losses.sparse_categorical_crossentropy(labels, prob)
             loss = tf.reduce_mean(loss)
             
             mask_bool = tf.cast(mask[:, :, 0], tf.bool)
@@ -1119,8 +1123,7 @@ class DiceTransformer(RasaModel):
             out['i_scores'] = preds
         
         if self.config[ENTITY_RECOGNITION]:
-            labels = None
-            _, preds = self._tf_layers['entity_layer'](x, labels, sequence_lengths-1, training=self._training)
+            _, preds = self._tf_layers['entity_layer'](x, sequence_lengths-1, training=self._training)
             out['e_ids'] = preds
         return out
 # pytype: enable=key-error

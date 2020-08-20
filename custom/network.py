@@ -165,7 +165,7 @@ class SoftmaxEntityLayer(tf.keras.layers.Layer):
     def call(self, x, sequence_lengths):
         prob = self.dense(x)
         preds = tf.argmax(prob, axis=-1)
-        mask = tf.sequence_mask(sequence_lengths, maxlen=preds.shape[-1], dtype=preds.dtype)
+        mask = tf.sequence_mask(sequence_lengths, maxlen=tf.shape(preds)[1], dtype=preds.dtype)
         preds = preds * mask
         return prob, preds
 
