@@ -148,9 +148,6 @@ class CustomClassifier(IntentClassifier):
         input_data, segment = self._get_input_data(data, segment, self.vocab)
         labels = np.array(labels).astype(np.int32)
 
-        print(input_data.shape)
-        print(segment.shape)
-
         self.model = CharNetwork(
             num_intent = self._num_intent,
             vocab_size = len(self.vocab),
