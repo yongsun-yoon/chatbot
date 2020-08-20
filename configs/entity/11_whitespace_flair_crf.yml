@@ -10,14 +10,13 @@ pipeline:
     analyzer: "char_wb"
     min_ngram: 1
     max_ngram: 4
-  - name: custom.featurizer.WordEmbedFeaturizer
-    model: 'word2vec'
+  - name: custom.featurizer.FlairFeaturizer
+    epochs: 100
     model_size: 64
-    window_size: 7
-    min_count: 1
-    epochs: 10
+    seq_len: 200
   - name: custom.extractor.CustomExtractor
     model: "CRF"
+    intent_classification: False
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector

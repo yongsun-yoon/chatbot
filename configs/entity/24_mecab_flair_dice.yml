@@ -2,7 +2,8 @@
 # https://rasa.com/docs/rasa/nlu/components/
 language: kr
 pipeline:
-  - name: WhitespaceTokenizer
+  - name: custom.tokenizer.MecabTokenizer
+    mecab_dir: '/tmp/mecab-ko-dic-2.1.1-20180720'
   - name: RegexFeaturizer
   - name: LexicalSyntacticFeaturizer
   - name: CountVectorsFeaturizer
@@ -14,7 +15,9 @@ pipeline:
     epochs: 100
     model_size: 64
     seq_len: 200
-  - name: DIETClassifier
+  - name: custom.extractor.CustomExtractor
+    model: "Dice"
+    intent_classification: False
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector

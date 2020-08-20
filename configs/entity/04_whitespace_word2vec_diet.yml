@@ -11,13 +11,13 @@ pipeline:
     min_ngram: 1
     max_ngram: 4
   - name: custom.featurizer.WordEmbedFeaturizer
-    model: 'fasttext'
+    model: 'word2vec'
     model_size: 64
     window_size: 7
     min_count: 1
     epochs: 10
-  - name: custom.extractor.CustomExtractor
-    model: "Dice"
+  - name: DIETClassifier
+    intent_classification: False
     epochs: 100
   - name: EntitySynonymMapper
   - name: ResponseSelector
