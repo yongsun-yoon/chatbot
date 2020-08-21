@@ -51,11 +51,11 @@ class CustomClassifier(IntentClassifier):
 
     # please make sure to update the docs when changing a default parameter
     defaults = {
-        TRANSFORMER_SIZE: 512,
+        TRANSFORMER_SIZE: 128,
         NUM_HEADS: 4,
-        NUM_TRANSFORMER_LAYERS: 2,
+        NUM_TRANSFORMER_LAYERS: 4,
         DROP_RATE: 0.2,
-        EPOCHS: 300,
+        EPOCHS: 100,
         RANDOM_SEED: None,
         LEARNING_RATE: 0.001,
         SEQ_LEN : 100,
