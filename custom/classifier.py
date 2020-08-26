@@ -152,11 +152,11 @@ class CustomClassifier(IntentClassifier):
         self.model = CharNetwork(
             num_intent = self._num_intent,
             vocab_size = len(vocab),
-            model_dim=self.component_config[TRANSFORMER_SIZE], 
-            ffn_dim=self.component_config[TRANSFORMER_SIZE], 
-            num_head=self.component_config[NUM_HEADS], 
-            drop_rate=self.component_config[DROP_RATE], 
-            num_layer=self.component_config[NUM_TRANSFORMER_LAYERS])
+            model_dim = self.component_config[TRANSFORMER_SIZE], 
+            ffn_dim = self.component_config[TRANSFORMER_SIZE], 
+            num_head = self.component_config[NUM_HEADS], 
+            drop_rate = self.component_config[DROP_RATE], 
+            num_layer = self.component_config[NUM_TRANSFORMER_LAYERS])
         
         self.model.compile(
             optimizer = tf.keras.optimizers.Adam(self.component_config[LEARNING_RATE]),
