@@ -1,1 +1,1 @@
-# chatbot
+# Rasa NLU Custom Component
